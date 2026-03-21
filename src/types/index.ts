@@ -1,40 +1,31 @@
-// ─── Core Domain Types ───────────────────────────────────────────────
+// ─── Re-exported from knowledge layer ────────────────────────────────
+import type { ProjectType } from "../knowledge/section-templates";
+export type { ProjectType };
 
-export type ProjectType =
-  | "code-focused"
-  | "content-creation"
-  | "data-analysis"
-  | "design"
-  | "operations"
-  | "mixed";
+// ─── Section Types (Anthropic taxonomy) ──────────────────────────────
 
 export type SectionType =
-  | "role"
-  | "behavior"
-  | "constraints"
-  | "context"
-  | "output_format"
-  | "code_conventions"
-  | "security"
-  | "testing"
-  | "accessibility"
-  | "brand_voice"
-  | "error_handling"
-  | "examples"
-  | "dependencies"
-  | "workflow";
+  | "commands"       // bash commands: build, test, lint, dev
+  | "code_style"     // rules that differ from defaults only
+  | "workflow"       // how to work: typecheck, commit, test single files
+  | "architecture"   // project-specific decisions not inferrable from code
+  | "constraints"    // what NOT to do — explicit boundaries
+  | "testing"        // runner, conventions, coverage expectations
+  | "gotchas"        // non-obvious behaviors and common pitfalls
+  | "env_setup"      // required env vars, setup steps
+  | "verification";  // how Claude checks its own work
 
 export type IssueSeverity = "critical" | "warning" | "suggestion";
 
 export type SuggestionCategory = "gap" | "enhancement" | "addition";
 
+// Anthropic-aligned 5-dimension scoring model
 export type ScoreDimension =
-  | "completeness"
-  | "clarity"
-  | "technical_accuracy"
-  | "scope_alignment"
-  | "structure"
-  | "constraint_quality";
+  | "actionability"  // can Claude execute/verify? (30%)
+  | "conciseness"    // under 200 lines, no bloat? (25%)
+  | "specificity"    // no vague qualifiers? (20%)
+  | "completeness"   // required sections present? (15%)
+  | "consistency";   // no contradictions or duplicates? (10%)
 
 export type Grade = "A" | "B" | "C" | "D" | "F";
 
@@ -55,7 +46,7 @@ export interface ClaudeMdDocument {
   sections: ParsedSection[];
   detectedProjectType: ProjectType;
   secondaryProjectType?: ProjectType;
-  language: string; // ISO 639-1 code detected from content
+  language: string;
   contentHash: string;
 }
 
@@ -63,13 +54,13 @@ export interface ClaudeMdDocument {
 
 export interface AnalysisIssue {
   id: string;
-  sectionId: string | null; // null = document-level issue
+  sectionId: string | null;
   severity: IssueSeverity;
   title: string;
   description: string;
   line?: number;
-  matchedText?: string; // the problematic fragment
-  ruleId: string; // e.g., "vague-qualifier", "missing-section", "contradiction"
+  matchedText?: string;
+  ruleId: string;
 }
 
 export interface AnalysisResult {
@@ -85,31 +76,31 @@ export interface Suggestion {
   id: string;
   category: SuggestionCategory;
   severity: IssueSeverity;
-  relatedIssueId?: string; // links back to AnalysisIssue
+  relatedIssueId?: string;
   sectionId: string | null;
   title: string;
   description: string;
-  currentText?: string; // what's there now (for diff view)
-  suggestedText: string; // what we propose
-  impact: number; // 1–10, used for priority sorting
-  reasoning: string; // why this change matters
+  currentText?: string;
+  suggestedText: string;
+  impact: number;
+  reasoning: string;
 }
 
 // ─── Evaluation Engine Output ────────────────────────────────────────
 
 export interface DimensionScore {
   dimension: ScoreDimension;
-  score: number; // 0–100
+  score: number;  // 0–100
   weight: number; // 0.0–1.0
   explanation: string;
-  issues: string[]; // specific problems that lowered the score
+  issues: string[];
 }
 
 export interface EvaluationResult {
   dimensions: DimensionScore[];
   compositeScore: number;
   grade: Grade;
-  summary: string; // 1–2 sentence overall assessment
+  summary: string;
 }
 
 // ─── Recommendation Engine Output ────────────────────────────────────
@@ -118,9 +109,23 @@ export interface SectionRecommendation {
   sectionType: SectionType;
   title: string;
   description: string;
-  impact: number; // 1–10
-  template: string; // starter content the user can customize
+  impact: number;
+  template: string;
   reasoning: string;
+}
+
+// ─── Generator Engine ─────────────────────────────────────────────────
+
+export interface GeneratorInput {
+  lazyPrompt: string;
+}
+
+export interface GeneratorOutput {
+  content: string;
+  detectedProjectType: ProjectType;
+  detectedTechnologies: string[];
+  placeholders: string[];
+  lineCount: number;
 }
 
 // ─── Orchestrator ────────────────────────────────────────────────────
