@@ -47,7 +47,7 @@ export function run(rawContent: string): OptimizerResult {
   const analysisResult: AnalysisResult = analyze(rawContent);
 
   // Step 2: Evaluation (depends on analysis)
-  const evaluationResult: EvaluationResult = evaluate(analysisResult);
+  const evaluationResult: EvaluationResult = evaluate(analysisResult.document, analysisResult);
 
   // Step 3: Enhancement suggestions (depends on analysis)
   const suggestions = generateSuggestions(analysisResult);
