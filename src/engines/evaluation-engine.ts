@@ -1,8 +1,15 @@
 /**
  * Evaluation Engine
  *
- * Scores a parsed claude.md document across 6 dimensions,
+ * Scores a parsed claude.md document across 5 Anthropic-aligned dimensions,
  * produces a composite score, letter grade, and per-dimension explanations.
+ *
+ * Dimensions (weights):
+ *   actionability  30% — can Claude execute/verify?
+ *   conciseness    25% — under 200 lines, no bloat?
+ *   specificity    20% — no vague qualifiers?
+ *   completeness   15% — required sections present?
+ *   consistency    10% — no contradictions or duplicates?
  */
 
 import type {
@@ -13,103 +20,223 @@ import type {
   ScoreDimension,
   Grade,
   SectionType,
-  ProjectType,
 } from "../types";
+import { ANTI_PATTERNS } from "../knowledge/antipatterns";
+import { SECTION_TEMPLATES } from "../knowledge/section-templates";
+import type { ProjectType } from "../knowledge/section-templates";
 
 // ─── Weight Configuration ────────────────────────────────────────────
 
 const DIMENSION_WEIGHTS: Record<ScoreDimension, number> = {
-  completeness: 0.25,
-  clarity: 0.25,
-  technical_accuracy: 0.2,
-  scope_alignment: 0.15,
-  structure: 0.1,
-  constraint_quality: 0.05,
+  actionability: 0.30,
+  conciseness: 0.25,
+  specificity: 0.20,
+  completeness: 0.15,
+  consistency: 0.10,
 };
 
-// ─── Required Sections per Project Type ──────────────────────────────
+// ─── Required Sections Helper ────────────────────────────────────────
 
-const REQUIRED_SECTIONS: Record<ProjectType, SectionType[]> = {
-  "code-focused": [
-    "role", "context", "constraints", "code_conventions",
-    "output_format", "error_handling",
-  ],
-  "content-creation": [
-    "role", "context", "constraints", "brand_voice",
-    "output_format", "examples",
-  ],
-  "data-analysis": [
-    "role", "context", "constraints", "output_format",
-    "dependencies", "examples",
-  ],
-  design: [
-    "role", "context", "constraints", "accessibility",
-    "output_format",
-  ],
-  operations: [
-    "role", "context", "constraints", "workflow",
-    "error_handling", "dependencies",
-  ],
-  mixed: [
-    "role", "context", "constraints", "output_format",
-    "error_handling",
-  ],
-};
-
-// ─── Vague / Hedge Patterns ──────────────────────────────────────────
-
-const VAGUE_PATTERNS = [
-  /\bas needed\b/gi,
-  /\bif appropriate\b/gi,
-  /\bwhen necessary\b/gi,
-  /\betc\.?\b/gi,
-  /\band so on\b/gi,
-  /\bvarious\b/gi,
-  /\bproperly\b/gi,
-  /\bcorrectly\b/gi,
-  /\bgood quality\b/gi,
-  /\bhigh quality\b/gi,
-  /\bbest practices\b/gi,
-];
-
-const HEDGE_PATTERNS = [
-  /\bmaybe\b/gi,
-  /\bperhaps\b/gi,
-  /\bpossibly\b/gi,
-  /\bmight want to\b/gi,
-  /\bcould consider\b/gi,
-  /\btry to\b/gi,
-];
-
-const PASSIVE_PATTERNS = [
-  /\bshould be\s+\w+ed\b/gi,
-  /\bwill be\s+\w+ed\b/gi,
-  /\bcan be\s+\w+ed\b/gi,
-  /\bis\s+\w+ed\b/gi,
-];
+function getRequiredSections(projectType: ProjectType): SectionType[] {
+  const templates = SECTION_TEMPLATES[projectType];
+  const headingToSection: Partial<Record<string, SectionType>> = {
+    // Universal
+    "## Commands": "commands",
+    "## Code style": "code_style",
+    "## Workflow": "workflow",
+    "## Architecture": "architecture",
+    "## Constraints": "constraints",
+    "## Testing": "testing",
+    "## Gotchas": "gotchas",
+    "## Environment": "env_setup",
+    "## Verification": "verification",
+    // Fullstack command variants
+    "## Commands — Frontend": "commands",
+    "## Commands — Backend": "commands",
+    // Fullstack / API code style variants
+    "## Code style — Frontend": "code_style",
+    "## Code style — Backend": "code_style",
+    // API backend
+    "## API conventions": "architecture",
+    "## API boundary": "constraints",
+    // DevOps/Infra
+    "## Security": "constraints",
+    "## Change management": "workflow",
+    // Mobile
+    "## Performance budgets": "constraints",
+    // Data analysis
+    "## Data sources": "architecture",
+    "## SQL conventions": "code_style",
+    "## Output format": "verification",
+    // Content creation
+    "## Voice & tone": "constraints",
+    "## Audience": "constraints",
+    "## Vocabulary": "constraints",
+    "## Review criteria": "verification",
+    // Design system
+    "## Component conventions": "code_style",
+    "## Design tokens": "architecture",
+    "## Accessibility": "constraints",
+  };
+  return templates
+    .filter((t) => t.required)
+    .map((t) => headingToSection[t.heading])
+    .filter((s): s is SectionType => s !== undefined);
+}
 
 // ─── Scoring Functions ───────────────────────────────────────────────
 
-function scoreCompleteness(doc: ClaudeMdDocument): DimensionScore {
-  const required = REQUIRED_SECTIONS[doc.detectedProjectType];
-  const present = new Set(doc.sections.map((s) => s.type));
-
-  const requiredPresent = required.filter((t) => present.has(t)).length;
-  const requiredTotal = required.length;
-  const baseScore = (requiredPresent / requiredTotal) * 80;
-
-  const hasExamples = doc.sections.some((s) => s.type === "examples") ? 10 : 0;
-  const hasErrorHandling = doc.sections.some((s) => s.type === "error_handling") ? 10 : 0;
-
-  const score = Math.min(100, Math.round(baseScore + hasExamples + hasErrorHandling));
-  const missing = required.filter((t) => !present.has(t));
-
+function scoreActionability(doc: ClaudeMdDocument): DimensionScore {
+  const raw = doc.raw;
   const issues: string[] = [];
-  if (missing.length > 0) {
-    issues.push(`Missing required sections: ${missing.join(", ")}`);
+  let score = 0;
+
+  const hasCommands =
+    /```|\`[^`]+\`/.test(raw) &&
+    /(pnpm|npm|yarn|pip|cargo|go |make|npx)\s+\w+/.test(raw);
+  if (hasCommands) score += 40;
+  else issues.push("No runnable commands (build/dev/start) found");
+
+  const hasTest =
+    /(pnpm|npm|yarn|pip|pytest|cargo|go)\s+(test|run test|run spec)\b/i.test(raw);
+  if (hasTest) score += 25;
+  else issues.push("No test command found — Claude can't verify its own changes");
+
+  const hasLint =
+    /(pnpm|npm|yarn)\s+(lint|run lint)\b/i.test(raw) ||
+    /eslint|ruff|pylint/.test(raw);
+  if (hasLint) score += 15;
+  else issues.push("No lint command found");
+
+  const hasTypecheck = /tsc\s+--noEmit|pnpm\s+typecheck|mypy|pyright/.test(raw);
+  if (hasTypecheck) score += 10;
+
+  const hasExamples = doc.sections.some(
+    (s) =>
+      s.type === "verification" ||
+      /example|e\.g\.|for instance/i.test(s.content)
+  );
+  if (hasExamples) score += 10;
+
+  return {
+    dimension: "actionability",
+    score: Math.min(100, score),
+    weight: DIMENSION_WEIGHTS.actionability,
+    explanation:
+      score >= 80
+        ? "Strong verification criteria. Claude can check its own work."
+        : score >= 50
+        ? "Some runnable commands present, but gaps remain (test, lint, typecheck)."
+        : "Missing runnable commands. Per Anthropic: giving Claude a way to verify is the highest-leverage improvement.",
+    issues,
+  };
+}
+
+function scoreConciseness(doc: ClaudeMdDocument): DimensionScore {
+  const lineCount = doc.raw.split("\n").length;
+  const issues: string[] = [];
+  let score = 100;
+
+  if (lineCount > 300) {
+    score -= 50;
+    issues.push(`${lineCount} lines — severely over the 200-line limit`);
+  } else if (lineCount > 200) {
+    score -= 30;
+    issues.push(`${lineCount} lines — over Anthropic's 200-line recommendation`);
   }
-  if (!hasExamples) issues.push("No examples section found");
-  if (!hasErrorHandling) issues.push("No error handling guidance");
+
+  const selfEvidentPatterns = ANTI_PATTERNS.filter(
+    (ap) => !ap.programmatic && ap.id.startsWith("self-evident")
+  );
+  for (const ap of selfEvidentPatterns) {
+    const matches = doc.raw.match(new RegExp(ap.pattern.source, "gi"));
+    if (matches) {
+      score -= matches.length * 15;
+      issues.push(`"${matches[0]}" — self-evident instruction (wastes context)`);
+    }
+  }
+
+  const bloatPatterns = ANTI_PATTERNS.filter(
+    (ap) =>
+      !ap.programmatic &&
+      (ap.id.startsWith("api-docs") || ap.id.startsWith("file-by-file"))
+  );
+  for (const ap of bloatPatterns) {
+    const matches = doc.raw.match(new RegExp(ap.pattern.source, "gi"));
+    if (matches) {
+      score -= matches.length * 5;
+      issues.push(`Inline content that should be linked: ${matches[0]}`);
+    }
+  }
+
+  return {
+    dimension: "conciseness",
+    score: Math.max(0, score),
+    weight: DIMENSION_WEIGHTS.conciseness,
+    explanation:
+      score >= 90
+        ? "File is tight. No bloat detected."
+        : score >= 60
+        ? "Some bloat present — self-evident instructions or over-length."
+        : "File is too long or contains self-evident padding. Claude will skip instructions.",
+    issues,
+  };
+}
+
+function scoreSpecificity(doc: ClaudeMdDocument): DimensionScore {
+  const fullContent = doc.raw;
+  const issues: string[] = [];
+  let penaltyPoints = 0;
+
+  const vaguePatterns = ANTI_PATTERNS.filter(
+    (ap) => !ap.programmatic && ap.id.startsWith("vague-")
+  );
+  for (const ap of vaguePatterns) {
+    const matches = fullContent.match(new RegExp(ap.pattern.source, "gi"));
+    if (matches) {
+      penaltyPoints += matches.length * 5;
+      issues.push(`"${matches[0]}" — ${ap.message.split(".")[0]}`);
+    }
+  }
+
+  const hedgePatterns = ANTI_PATTERNS.filter(
+    (ap) => !ap.programmatic && ap.id.startsWith("hedge-")
+  );
+  for (const ap of hedgePatterns) {
+    const matches = fullContent.match(new RegExp(ap.pattern.source, "gi"));
+    if (matches) {
+      penaltyPoints += matches.length * 3;
+      issues.push(`"${matches[0]}" — hedge word weakens instruction`);
+    }
+  }
+
+  const score = Math.max(0, 100 - penaltyPoints);
+
+  return {
+    dimension: "specificity",
+    score,
+    weight: DIMENSION_WEIGHTS.specificity,
+    explanation:
+      score >= 90
+        ? "Instructions are concrete and direct."
+        : score >= 60
+        ? "Several vague qualifiers or hedge words — Claude will have to guess intent."
+        : "Many ambiguous instructions. Per Anthropic: '2-space indentation' not 'format code properly'.",
+    issues,
+  };
+}
+
+function scoreCompleteness(doc: ClaudeMdDocument): DimensionScore {
+  const required = getRequiredSections(doc.detectedProjectType);
+  const present = new Set(doc.sections.map((s) => s.type));
+  const missing = required.filter((t) => !present.has(t));
+  const score =
+    required.length === 0
+      ? 100
+      : Math.round(
+          (required.filter((t) => present.has(t)).length / required.length) * 100
+        );
+  const issues = missing.map((t) => `Missing "${t}" section`);
 
   return {
     dimension: "completeness",
@@ -117,337 +244,102 @@ function scoreCompleteness(doc: ClaudeMdDocument): DimensionScore {
     weight: DIMENSION_WEIGHTS.completeness,
     explanation:
       score >= 90
-        ? "All critical sections are present. The prompt covers the dimensions Claude needs."
+        ? "All required sections present for this project type."
         : score >= 60
-        ? `Most sections are present, but ${missing.length} required section(s) are missing.`
-        : `Significant gaps: ${missing.length} of ${requiredTotal} required sections are absent.`,
+        ? `${missing.length} required section(s) missing: ${missing.join(", ")}.`
+        : `Significant gaps: ${missing.length} of ${required.length} required sections absent.`,
     issues,
   };
 }
 
-function scoreClarity(doc: ClaudeMdDocument): DimensionScore {
-  const fullContent = doc.sections.map((s) => s.content).join(" ");
-  const issues: string[] = [];
-  let issueCount = 0;
-
-  for (const pattern of VAGUE_PATTERNS) {
-    const matches = fullContent.match(pattern);
-    if (matches) {
-      issueCount += matches.length;
-      issues.push(`Found "${matches[0]}" (vague qualifier) × ${matches.length}`);
-    }
-  }
-
-  for (const pattern of HEDGE_PATTERNS) {
-    const matches = fullContent.match(pattern);
-    if (matches) {
-      issueCount += matches.length;
-      issues.push(`Found "${matches[0]}" (hedge word) × ${matches.length}`);
-    }
-  }
-
-  for (const pattern of PASSIVE_PATTERNS) {
-    const matches = fullContent.match(pattern);
-    if (matches) {
-      issueCount += Math.ceil(matches.length / 2); // passive is less severe
-    }
-  }
-
-  const penalty = Math.min(issueCount * 3, 60);
-  const score = Math.max(0, 100 - penalty);
-
-  return {
-    dimension: "clarity",
-    score,
-    weight: DIMENSION_WEIGHTS.clarity,
-    explanation:
-      score >= 90
-        ? "Instructions are clear and direct. Minimal ambiguity."
-        : score >= 60
-        ? "Several vague or hedging phrases dilute the instructions."
-        : "Many instructions are ambiguous. Claude will have to guess intent frequently.",
-    issues,
-  };
-}
-
-function scoreTechnicalAccuracy(doc: ClaudeMdDocument): DimensionScore {
-  const issues: string[] = [];
-  let failedChecks = 0;
-
-  // Check for conflicting conventions
-  const content = doc.raw.toLowerCase();
-
-  // Example: mentions both camelCase and snake_case as "the" naming convention
-  const mentionsCamel = /camelcase/i.test(content);
-  const mentionsSnake = /snake_case/i.test(content);
-  const mentionsPascal = /pascalcase/i.test(content);
-  if (
-    [mentionsCamel, mentionsSnake, mentionsPascal].filter(Boolean).length > 1
-  ) {
-    // Only a problem if they don't clarify which is for what
-    const hasClarification = /for\s+(variables|functions|classes|types|files)/i.test(content);
-    if (!hasClarification) {
-      failedChecks++;
-      issues.push(
-        "Multiple naming conventions mentioned without clarifying which applies where"
-      );
-    }
-  }
-
-  // Check for references to potentially outdated or nonexistent tools
-  const suspiciousRefs = [
-    { pattern: /tslint/i, issue: "TSLint is deprecated — ESLint is the successor" },
-    { pattern: /create-react-app/i, issue: "Create React App is deprecated — consider Vite or Next.js references" },
-    { pattern: /moment\.js/i, issue: "Moment.js is in maintenance mode — date-fns or dayjs are preferred" },
-  ];
-
-  for (const ref of suspiciousRefs) {
-    if (ref.pattern.test(content)) {
-      failedChecks++;
-      issues.push(ref.issue);
-    }
-  }
-
-  // Check for version conflicts
-  const versionMentions = content.match(/(\w+)\s*v?(\d+(?:\.\d+)*)/g);
-  if (versionMentions) {
-    const toolVersions: Record<string, Set<string>> = {};
-    for (const mention of versionMentions) {
-      const [tool, version] = mention.split(/\s+v?/);
-      if (tool && version) {
-        if (!toolVersions[tool]) toolVersions[tool] = new Set();
-        toolVersions[tool].add(version);
-        if (toolVersions[tool].size > 1) {
-          failedChecks++;
-          issues.push(`Conflicting versions for "${tool}": ${[...toolVersions[tool]].join(", ")}`);
-        }
-      }
-    }
-  }
-
-  const score = Math.max(0, 100 - failedChecks * 15);
-
-  return {
-    dimension: "technical_accuracy",
-    score,
-    weight: DIMENSION_WEIGHTS.technical_accuracy,
-    explanation:
-      score >= 90
-        ? "Technical references are consistent and current."
-        : `${failedChecks} technical issue(s) found that could confuse Claude or produce outdated output.`,
-    issues,
-  };
-}
-
-function scoreScopeAlignment(doc: ClaudeMdDocument): DimensionScore {
-  const issues: string[] = [];
-
-  // For each section, compute relevance to the primary project type
-  const typeKeywords: Record<ProjectType, string[]> = {
-    "code-focused": ["code", "function", "api", "database", "test", "deploy", "git", "component"],
-    "content-creation": ["brand", "audience", "tone", "copy", "headline", "seo", "editorial"],
-    "data-analysis": ["data", "query", "metric", "chart", "dashboard", "analysis", "sql"],
-    design: ["design", "figma", "component", "layout", "spacing", "responsive", "accessibility"],
-    operations: ["deploy", "monitor", "incident", "runbook", "infrastructure", "kubernetes"],
-    mixed: [],
-  };
-
-  const primaryKeywords = typeKeywords[doc.detectedProjectType] || [];
-  let offTopicSections = 0;
-
-  if (primaryKeywords.length > 0) {
-    for (const section of doc.sections) {
-      const words = section.content.toLowerCase().split(/\s+/);
-      const relevantWordCount = words.filter((w) =>
-        primaryKeywords.some((kw) => w.includes(kw))
-      ).length;
-      const relevance = words.length > 0 ? relevantWordCount / words.length : 0;
-
-      if (relevance < 0.01 && section.type !== "role" && section.type !== "constraints") {
-        offTopicSections++;
-        issues.push(
-          `"${section.title}" has low relevance to ${doc.detectedProjectType} — possible scope creep`
-        );
-      }
-    }
-  }
-
-  const ratio = doc.sections.length > 0 ? offTopicSections / doc.sections.length : 0;
-  const score = Math.max(0, Math.round(100 - ratio * 100));
-
-  return {
-    dimension: "scope_alignment",
-    score,
-    weight: DIMENSION_WEIGHTS.scope_alignment,
-    explanation:
-      score >= 90
-        ? "The prompt stays focused on its project type throughout."
-        : `${offTopicSections} section(s) may be off-topic for a ${doc.detectedProjectType} project.`,
-    issues,
-  };
-}
-
-function scoreStructure(doc: ClaudeMdDocument): DimensionScore {
-  const issues: string[] = [];
-  let penalties = 0;
-
-  // Check heading level consistency
-  const headingLevels = doc.sections.map((s) => s.headingLevel);
-  const hasSkippedLevels = headingLevels.some((level, i) => {
-    if (i === 0) return false;
-    return level > headingLevels[i - 1] + 1;
-  });
-  if (hasSkippedLevels) {
-    penalties += 5;
-    issues.push("Heading levels skip (e.g., ## to #### without ###)");
-  }
-
-  // Check for empty sections
-  const emptySections = doc.sections.filter((s) => s.content.trim().length < 10);
-  if (emptySections.length > 0) {
-    penalties += emptySections.length * 5;
-    issues.push(
-      `${emptySections.length} near-empty section(s): ${emptySections
-        .map((s) => `"${s.title}"`)
-        .join(", ")}`
-    );
-  }
-
-  // Ideal ordering: role → context → behavior → constraints → specifics → examples
-  const idealOrder: SectionType[] = [
-    "role", "context", "behavior", "constraints",
-    "code_conventions", "output_format", "error_handling", "examples",
-  ];
-  const presentOrder = doc.sections.map((s) => s.type);
-  let orderViolations = 0;
-  for (let i = 0; i < presentOrder.length - 1; i++) {
-    const idxA = idealOrder.indexOf(presentOrder[i]);
-    const idxB = idealOrder.indexOf(presentOrder[i + 1]);
-    if (idxA >= 0 && idxB >= 0 && idxA > idxB) {
-      orderViolations++;
-    }
-  }
-  if (orderViolations > 0) {
-    penalties += orderViolations * 5;
-    issues.push(
-      `${orderViolations} section(s) out of recommended order (role → context → constraints → specifics → examples)`
-    );
-  }
-
-  // Check for very long document without sub-sections
-  if (doc.sections.length <= 2 && doc.raw.split("\n").length > 50) {
-    penalties += 10;
-    issues.push("Long document with very few sections — consider breaking it up");
-  }
-
-  const score = Math.max(0, 100 - penalties);
-
-  return {
-    dimension: "structure",
-    score,
-    weight: DIMENSION_WEIGHTS.structure,
-    explanation:
-      score >= 90
-        ? "Well-organized with logical section flow."
-        : `Structural issues found: ${issues.length} problem(s) affecting readability.`,
-    issues,
-  };
-}
-
-function scoreConstraintQuality(doc: ClaudeMdDocument): DimensionScore {
+function scoreConsistency(doc: ClaudeMdDocument): DimensionScore {
   const issues: string[] = [];
   let score = 100;
 
-  const constraintSections = doc.sections.filter(
-    (s) => s.type === "constraints" || /constraint|must not|do not|don't|never/i.test(s.content)
-  );
+  // Contradiction: "always X" vs "never X"
+  const alwaysMatches = [...doc.raw.matchAll(/always\s+(\w+(?:\s+\w+){0,3})/gi)];
+  const neverMatches = [...doc.raw.matchAll(/never\s+(\w+(?:\s+\w+){0,3})/gi)];
 
-  if (constraintSections.length === 0) {
-    return {
-      dimension: "constraint_quality",
-      score: 40,
-      weight: DIMENSION_WEIGHTS.constraint_quality,
-      explanation: "No constraints found. Without explicit boundaries, Claude may produce unwanted outputs.",
-      issues: ["No constraint section present"],
-    };
-  }
-
-  const allConstraintText = constraintSections.map((s) => s.content).join(" ");
-
-  // Check for vague constraints
-  const vagueConstraints = allConstraintText.match(
-    /don't\s+do\s+anything\s+(?:bad|wrong|inappropriate)/gi
-  );
-  if (vagueConstraints) {
-    score -= 10 * vagueConstraints.length;
-    issues.push("Constraint is too vague to be actionable");
-  }
-
-  // Check for contradictions within constraints
-  const dontPatterns = [...allConstraintText.matchAll(/(?:don't|do not|never)\s+(\w+(?:\s+\w+){0,3})/gi)];
-  const doPatterns = [...allConstraintText.matchAll(/(?:always|must)\s+(\w+(?:\s+\w+){0,3})/gi)];
-
-  for (const dont of dontPatterns) {
-    for (const doP of doPatterns) {
-      if (dont[1].toLowerCase() === doP[1].toLowerCase()) {
-        score -= 20;
-        issues.push(`Contradiction: "don't ${dont[1]}" vs "always ${doP[1]}"`);
+  for (const a of alwaysMatches) {
+    for (const n of neverMatches) {
+      const overlap = a[1].split(" ").filter((w) => n[1].includes(w));
+      if (overlap.length >= 2) {
+        score -= 25;
+        issues.push(`Possible contradiction: "always ${a[1]}" vs "never ${n[1]}"`);
       }
     }
   }
 
-  score = Math.max(0, score);
+  // Duplicate instructions (Jaccard > 0.7)
+  const sentences = doc.raw
+    .split(/[.!?\n]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 25);
+  const seen: string[] = [];
+  for (const sent of sentences) {
+    const isDupe = seen.some((s) => {
+      const wordsA = new Set(s.toLowerCase().split(/\s+/));
+      const wordsB = new Set(sent.toLowerCase().split(/\s+/));
+      const intersection = [...wordsA].filter((w) => wordsB.has(w)).length;
+      const union = new Set([...wordsA, ...wordsB]).size;
+      return intersection / union > 0.7;
+    });
+    if (isDupe) {
+      score -= 10;
+      issues.push(`Duplicate instruction detected: "${sent.slice(0, 60)}..."`);
+    } else {
+      seen.push(sent);
+    }
+  }
 
   return {
-    dimension: "constraint_quality",
-    score,
-    weight: DIMENSION_WEIGHTS.constraint_quality,
+    dimension: "consistency",
+    score: Math.max(0, score),
+    weight: DIMENSION_WEIGHTS.consistency,
     explanation:
       score >= 90
-        ? "Constraints are specific, non-contradictory, and actionable."
-        : `${issues.length} issue(s) found in constraint definitions.`,
+        ? "No contradictions or duplicates found."
+        : `${issues.length} consistency issue(s) found.`,
     issues,
   };
-}
-
-// ─── Grade Calculation ───────────────────────────────────────────────
-
-function computeGrade(score: number): Grade {
-  if (score >= 90) return "A";
-  if (score >= 75) return "B";
-  if (score >= 60) return "C";
-  if (score >= 40) return "D";
-  return "F";
 }
 
 // ─── Main Evaluation Function ────────────────────────────────────────
 
-export function evaluate(analysisResult: AnalysisResult): EvaluationResult {
-  const { document } = analysisResult;
-
-  const dimensions: DimensionScore[] = [
-    scoreCompleteness(document),
-    scoreClarity(document),
-    scoreTechnicalAccuracy(document),
-    scoreScopeAlignment(document),
-    scoreStructure(document),
-    scoreConstraintQuality(document),
+export function evaluate(doc: ClaudeMdDocument, _analysis: AnalysisResult): EvaluationResult {
+  const dimensionScores = [
+    scoreActionability(doc),
+    scoreConciseness(doc),
+    scoreSpecificity(doc),
+    scoreCompleteness(doc),
+    scoreConsistency(doc),
   ];
 
   const compositeScore = Math.round(
-    dimensions.reduce((sum, d) => sum + d.score * d.weight, 0)
+    dimensionScores.reduce((sum, d) => sum + d.score * d.weight, 0)
   );
 
-  const grade = computeGrade(compositeScore);
-
-  const weakest = [...dimensions].sort((a, b) => a.score - b.score)[0];
+  const grade: Grade =
+    compositeScore >= 90
+      ? "A"
+      : compositeScore >= 75
+      ? "B"
+      : compositeScore >= 60
+      ? "C"
+      : compositeScore >= 40
+      ? "D"
+      : "F";
 
   const summary =
     grade === "A"
-      ? "This claude.md is well-structured and comprehensive. Minor refinements possible."
+      ? "CLAUDE.md is tight, actionable, and ready to ship."
       : grade === "B"
-      ? `Solid foundation. The biggest opportunity is improving ${weakest.dimension.replace("_", " ")}.`
-      : `Several areas need attention. Start with ${weakest.dimension.replace("_", " ")} (scored ${weakest.score}/100).`;
+      ? "CLAUDE.md is solid with minor improvements possible."
+      : grade === "C"
+      ? "CLAUDE.md is functional but has notable issues."
+      : grade === "D"
+      ? "CLAUDE.md has significant problems affecting Claude's performance."
+      : "CLAUDE.md needs a rewrite — too much bloat, ambiguity, or missing essentials.";
 
-  return { dimensions, compositeScore, grade, summary };
+  return { dimensions: dimensionScores, compositeScore, grade, summary };
 }
