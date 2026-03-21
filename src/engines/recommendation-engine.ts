@@ -26,84 +26,97 @@ interface RecommendationTemplate {
 }
 
 const RECOMMENDATION_TEMPLATES: RecommendationTemplate[] = [
+  // ── Highest priority: commands ──
+  {
+    sectionType: "commands",
+    title: "Add Commands Section",
+    description:
+      "Bash commands Claude can't guess: build, test, lint, typecheck, dev server.",
+    baseImpact: 10,
+    template: `## Commands
+- Dev: \`pnpm dev\`
+- Build: \`pnpm build\`
+- Test: \`pnpm test [filename]\`
+- Lint: \`pnpm lint\`
+- Type check: \`pnpm tsc --noEmit\``,
+    reasoning:
+      "Anthropic: 'The #1 thing you can add to CLAUDE.md. Give Claude a way to verify its work.' Commands are the highest-leverage section.",
+    applicableTo: [
+      "react-nextjs",
+      "python-backend",
+      "fullstack",
+      "data-analysis",
+      "design-system",
+      "devops-infra",
+      "mobile",
+      "api-backend",
+      "generic",
+    ],
+  },
+
   // ── Universal high-impact ──
   {
-    sectionType: "examples",
-    title: "Add Few-Shot Examples",
+    sectionType: "verification",
+    title: "Add Verification Criteria",
     description:
-      "Show Claude exactly what good output looks like with 1–3 input/output pairs.",
+      "Show Claude exactly what good output looks like — runnable commands and expected results.",
     baseImpact: 9,
-    template: `## Examples
+    template: `## Verification
 
-### Example 1: [Describe the scenario]
-
-**Input:**
+After making changes, verify with:
 \`\`\`
-[User request or input data]
-\`\`\`
-
-**Expected output:**
-\`\`\`
-[The response Claude should produce]
+pnpm test [filename]
+pnpm lint
+pnpm tsc --noEmit
 \`\`\`
 
-### Example 2: Edge case
-
-**Input:**
-\`\`\`
-[An ambiguous or tricky request]
-\`\`\`
-
-**Expected output:**
-\`\`\`
-[How Claude should handle it]
-\`\`\``,
+Expected: all commands exit 0 with no errors.`,
     reasoning:
-      "Few-shot examples are the single most effective technique for aligning output quality. They communicate expectations that words often can't.",
+      "Few-shot examples and verification criteria are the single most effective technique for aligning output quality. They communicate expectations that words often can't.",
     applicableTo: [
-      "code-focused", "content-creation", "data-analysis", "design", "operations", "mixed",
+      "react-nextjs",
+      "python-backend",
+      "fullstack",
+      "data-analysis",
+      "content-creation",
+      "design-system",
+      "devops-infra",
+      "mobile",
+      "api-backend",
+      "generic",
     ],
   },
 
   {
-    sectionType: "error_handling",
-    title: "Define Ambiguity Handling",
+    sectionType: "constraints",
+    title: "Define Constraints",
     description:
-      "Tell Claude what to do when the request is unclear, incomplete, or conflicts with other instructions.",
+      "Tell Claude what NOT to do — ambiguity handling, security guardrails, hard limits.",
     baseImpact: 7,
-    template: `## Handling Ambiguity
+    template: `## Constraints
 
 - If a request is unclear, ask ONE focused clarifying question before proceeding
 - If a request contradicts the constraints above, explain the conflict and ask for direction
-- If you don't know something, say "I don't know" rather than guessing
-- If multiple valid approaches exist, briefly describe the trade-offs and recommend one`,
+- Never hardcode secrets, API keys, or credentials — use environment variables
+- Parameterize all database queries (no string concatenation for SQL)
+- Validate and sanitize all user-facing inputs`,
     reasoning:
-      "Without explicit ambiguity guidance, Claude either guesses (producing wrong output) or over-asks (disrupting flow). This section calibrates the threshold.",
+      "Without explicit constraint guidance, Claude either guesses (producing wrong output) or over-asks (disrupting flow). Security flaws in generated code can reach production if not caught.",
     applicableTo: [
-      "code-focused", "content-creation", "data-analysis", "design", "operations", "mixed",
+      "react-nextjs",
+      "python-backend",
+      "fullstack",
+      "data-analysis",
+      "content-creation",
+      "design-system",
+      "devops-infra",
+      "mobile",
+      "api-backend",
+      "generic",
     ],
   },
 
   // ── Code-specific ──
-  {
-    sectionType: "security",
-    title: "Add Security Guardrails",
-    description:
-      "Prevent Claude from generating code with common security vulnerabilities.",
-    baseImpact: 8,
-    template: `## Security Requirements
-
-- Never hardcode secrets, API keys, or credentials — use environment variables
-- Parameterize all database queries (no string concatenation for SQL)
-- Validate and sanitize all user-facing inputs
-- Use HTTPS for all external API calls
-- Apply principle of least privilege for file system and network access
-- Flag any code that handles PII or financial data for review`,
-    reasoning:
-      "Security flaws in generated code can reach production if not caught. Explicit guardrails are cheaper than post-hoc audits.",
-    applicableTo: ["code-focused", "operations"],
-  },
-
   {
     sectionType: "testing",
     title: "Define Testing Expectations",
@@ -120,17 +133,16 @@ const RECOMMENDATION_TEMPLATES: RecommendationTemplate[] = [
 - Target: [80%+] branch coverage for new code`,
     reasoning:
       "Without test guidance, Claude either skips tests entirely or writes superficial ones. Explicit expectations produce tests worth running.",
-    applicableTo: ["code-focused"],
+    applicableTo: ["react-nextjs", "python-backend", "fullstack", "api-backend", "mobile"],
   },
 
   {
-    sectionType: "code_conventions",
+    sectionType: "code_style",
     title: "Document Code Style",
     description:
       "Ensure Claude matches your project's naming, formatting, and architectural patterns.",
     baseImpact: 7,
-    template: `## Code Conventions
-
+    template: `## Code style
 - **Language**: [TypeScript / Python / etc.]
 - **Naming**: camelCase for variables and functions, PascalCase for types and components
 - **Formatting**: [Prettier defaults / Black / project-specific rules]
@@ -140,95 +152,81 @@ const RECOMMENDATION_TEMPLATES: RecommendationTemplate[] = [
 - **Comments**: explain *why*, not *what* — the code should be self-documenting for the *what*`,
     reasoning:
       "Style inconsistency is the most common complaint about AI-generated code. This section eliminates the guesswork.",
-    applicableTo: ["code-focused"],
+    applicableTo: ["react-nextjs", "python-backend", "fullstack", "api-backend", "mobile"],
   },
 
-  // ── Content-specific ──
+  // ── Architecture ──
   {
-    sectionType: "brand_voice",
-    title: "Define Brand Voice",
+    sectionType: "architecture",
+    title: "List Data Sources and Architecture",
     description:
-      "Give Claude a personality and vocabulary that matches your brand.",
-    baseImpact: 8,
-    template: `## Brand Voice
-
-- **Tone**: [professional but warm / casual and direct / authoritative and reassuring]
-- **Audience**: [developers / marketers / enterprise buyers / general public]
-- **Personality**: [helpful expert / trusted advisor / friendly peer]
-- **Use these words**: [list preferred terms]
-- **Avoid these words**: [list terms that clash with your brand]
-- **Sentence style**: [short and punchy / long-form and detailed / conversational]`,
-    reasoning:
-      "Content without voice consistency feels generic. This section turns Claude from 'an AI that writes' into a voice the reader recognizes.",
-    applicableTo: ["content-creation"],
-  },
-
-  // ── Design-specific ──
-  {
-    sectionType: "accessibility",
-    title: "Add Accessibility Standards",
-    description:
-      "Ensure Claude considers accessibility in all design and UI decisions.",
-    baseImpact: 7,
-    template: `## Accessibility
-
-- Target: WCAG 2.1 AA compliance
-- All interactive elements must be reachable by keyboard (Tab, Enter, Escape)
-- Minimum contrast: 4.5:1 for normal text, 3:1 for large text
-- Every image needs meaningful alt text (or empty alt="" if decorative)
-- Form fields need visible labels — never rely solely on placeholder text
-- Test with screen reader (VoiceOver/NVDA) before shipping`,
-    reasoning:
-      "Accessibility requirements are easy to forget in the design phase but expensive to retrofit. Including them in the prompt prevents accessibility debt.",
-    applicableTo: ["design"],
-  },
-
-  // ── Data-specific ──
-  {
-    sectionType: "dependencies",
-    title: "List Data Sources and Tools",
-    description:
-      "Tell Claude which databases, APIs, and libraries are available.",
+      "Tell Claude which databases, APIs, frameworks, and libraries are available.",
     baseImpact: 6,
-    template: `## Data Sources & Tools
+    template: `## Architecture
 
-- **Primary database**: [Snowflake / BigQuery / PostgreSQL]
-- **Schema**: [warehouse.schema.table — list key tables]
-- **Query language**: [SQL dialect + any extensions]
-- **Visualization**: [matplotlib / plotly / Chart.js]
-- **Notebooks**: [Jupyter / Colab / Hex]
-- **Constraints**: [query timeout, max rows, PII restrictions]`,
+- **Framework**: [Next.js App Router / FastAPI / Express]
+- **Database**: [PostgreSQL via Prisma / Snowflake / MongoDB]
+- **Auth**: [NextAuth / JWT / OAuth provider]
+- **State**: [Zustand / Redux / React Query]
+- **Key constraints**: [query timeout, max rows, PII restrictions]`,
     reasoning:
-      "Data analysis prompts that don't specify the available tools produce generic SQL that won't run against your actual warehouse.",
-    applicableTo: ["data-analysis"],
+      "Analysis prompts that don't specify the available tools and architecture produce generic code that won't run against your actual stack.",
+    applicableTo: [
+      "react-nextjs",
+      "python-backend",
+      "fullstack",
+      "data-analysis",
+      "api-backend",
+      "mobile",
+    ],
   },
 
-  // ── Operations-specific ──
+  // ── Workflow ──
   {
     sectionType: "workflow",
     title: "Define Operational Workflow",
     description:
-      "Document the step-by-step process for common operational tasks.",
+      "Document the step-by-step process for common tasks and change management.",
     baseImpact: 7,
     template: `## Workflow
 
-### Standard Change
-1. Create change request with impact analysis
-2. Get peer review and approval
-3. Schedule maintenance window (if needed)
-4. Execute change with monitoring
-5. Verify success criteria
-6. Update documentation
+- Typecheck after making code changes: \`pnpm tsc --noEmit\`
+- Run relevant tests after changes: \`pnpm test [filename]\`
+- Prefer single test files over full suite for speed
+- Commit with descriptive messages following [COMMIT_CONVENTION]
 
 ### Incident Response
 1. Acknowledge and classify severity
-2. Assemble response team
-3. Diagnose and mitigate
-4. Communicate status to stakeholders
-5. Post-incident review within 48 hours`,
+2. Diagnose and mitigate
+3. Communicate status to stakeholders
+4. Post-incident review within 48 hours`,
     reasoning:
       "Operations prompts without workflows produce ad-hoc responses. Documented processes ensure Claude follows your organization's procedures.",
-    applicableTo: ["operations"],
+    applicableTo: ["devops-infra", "generic", "fullstack"],
+  },
+
+  // ── Design-specific ──
+  {
+    sectionType: "constraints",
+    title: "Add Accessibility and Brand Constraints",
+    description:
+      "Ensure Claude considers accessibility standards and brand voice in all design and content decisions.",
+    baseImpact: 7,
+    template: `## Constraints
+
+### Accessibility
+- Target: WCAG 2.1 AA compliance
+- All interactive elements must be reachable by keyboard (Tab, Enter, Escape)
+- Minimum contrast: 4.5:1 for normal text, 3:1 for large text
+- Every image needs meaningful alt text (or empty alt="" if decorative)
+
+### Brand Voice
+- **Tone**: [professional but warm / casual and direct / authoritative]
+- **Audience**: [developers / marketers / enterprise buyers / general public]
+- **Avoid these words**: [list terms that clash with your brand]`,
+    reasoning:
+      "Accessibility requirements are easy to forget in the design phase but expensive to retrofit. Voice consistency turns Claude from 'an AI that writes' into a recognizable brand voice.",
+    applicableTo: ["design-system", "content-creation"],
   },
 ];
 
@@ -242,10 +240,15 @@ export function generateRecommendations(
   const presentTypes = new Set(document.sections.map((s) => s.type));
 
   const recommendations: SectionRecommendation[] = [];
+  // Track which sectionTypes have already been added to avoid duplicates
+  const addedSectionTypes = new Set<SectionType>();
 
   for (const template of RECOMMENDATION_TEMPLATES) {
-    // Skip if section already exists
+    // Skip if section already exists in document
     if (presentTypes.has(template.sectionType)) continue;
+
+    // Skip if we already have a recommendation for this sectionType
+    if (addedSectionTypes.has(template.sectionType)) continue;
 
     // Skip if not applicable to this project type
     if (!template.applicableTo.includes(document.detectedProjectType)) continue;
@@ -264,6 +267,8 @@ export function generateRecommendations(
       template: template.template,
       reasoning: template.reasoning,
     });
+
+    addedSectionTypes.add(template.sectionType);
   }
 
   // Sort by impact, highest first
