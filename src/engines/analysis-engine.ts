@@ -9,104 +9,95 @@ import type {
   ClaudeMdDocument,
   ParsedSection,
   SectionType,
-  ProjectType,
   AnalysisIssue,
   AnalysisResult,
   IssueSeverity,
 } from "../types";
+import type { ProjectType } from "../knowledge/section-templates";
+import { ANTI_PATTERNS } from "../knowledge/antipatterns";
 import { hashContent, generateId } from "../utils/helpers";
 
 // ─── Section Detection ───────────────────────────────────────────────
 
 const SECTION_PATTERNS: Record<SectionType, RegExp[]> = {
-  role: [
-    /\b(role|persona|you are|act as|behave as|identity)\b/i,
-    /\b(assistant|expert|specialist|engineer|advisor)\b/i,
+  commands: [
+    /\b(commands?|bash|scripts?|run|build|test|lint|deploy|start|dev)\b/i,
+    /\b(pnpm|npm|yarn|pip|poetry|cargo|go run|make|docker)\b/i,
   ],
-  behavior: [
-    /\b(tone|style|approach|manner|communicate|respond)\b/i,
-    /\b(friendly|formal|concise|verbose|helpful)\b/i,
-  ],
-  constraints: [
-    /\b(do not|don't|never|avoid|must not|prohibited|forbidden)\b/i,
-    /\b(constraint|limitation|restriction|boundary)\b/i,
-  ],
-  context: [
-    /\b(project|background|overview|about|description|purpose)\b/i,
-    /\b(tech stack|architecture|codebase|repository)\b/i,
-  ],
-  output_format: [
-    /\b(format|output|response structure|markdown|json|template)\b/i,
-    /\b(code block|heading|bullet|numbered list)\b/i,
-  ],
-  code_conventions: [
-    /\b(naming convention|style guide|lint|prettier|eslint|formatting)\b/i,
-    /\b(camelCase|snake_case|PascalCase|indentation|semicolon)\b/i,
-  ],
-  security: [
-    /\b(security|auth|authentication|authorization|secret|token|api key)\b/i,
-    /\b(sanitize|validate|encrypt|csrf|xss|injection)\b/i,
-  ],
-  testing: [
-    /\b(test|spec|coverage|jest|vitest|pytest|unit test|integration test)\b/i,
-    /\b(mock|stub|fixture|assertion|expect)\b/i,
-  ],
-  accessibility: [
-    /\b(accessibility|a11y|wcag|aria|screen reader|keyboard nav)\b/i,
-    /\b(contrast|focus|alt text|semantic html)\b/i,
-  ],
-  brand_voice: [
-    /\b(brand|voice|tone of voice|messaging|tagline|slogan)\b/i,
-    /\b(audience|persona|target market|brand pillar)\b/i,
-  ],
-  error_handling: [
-    /\b(error handling|edge case|fallback|ambiguity|unclear|unknown)\b/i,
-    /\b(when unsure|if unclear|default behavior)\b/i,
-  ],
-  examples: [
-    /\b(example|sample|demonstration|input.*output|few-shot)\b/i,
-    /\b(here is|for instance|such as|e\.g\.|like this)\b/i,
-  ],
-  dependencies: [
-    /\b(dependency|dependencies|library|framework|package|api|tool)\b/i,
-    /\b(import|require|install|version)\b/i,
+  code_style: [
+    /\b(code style|style guide|conventions?|formatting|lint|prettier|eslint)\b/i,
+    /\b(naming|camelCase|snake_case|PascalCase|indentation|semicolons?|imports?)\b/i,
   ],
   workflow: [
-    /\b(workflow|step|pipeline|process|sequence|first.*then|phase)\b/i,
-    /\b(decision tree|flowchart|checklist)\b/i,
+    /\b(workflow|process|checklist|steps?|protocol|how to work)\b/i,
+    /\b(commit|branch|pull request|typecheck|type.?check|single test)\b/i,
+  ],
+  architecture: [
+    /\b(architecture|arch|design|structure|tech stack|patterns?|overview)\b/i,
+    /\b(database|auth|api|framework|library|module|service|router)\b/i,
+  ],
+  constraints: [
+    /\b(constraints?|limitations?|restrictions?|boundaries?|rules?|must not)\b/i,
+    /\b(do not|don't|never|avoid|prohibited|forbidden|off.?limits)\b/i,
+  ],
+  testing: [
+    /\b(tests?|testing|spec|coverage|jest|vitest|pytest|tdd|unit|integration)\b/i,
+    /\b(mock|fixture|assertion|expect|test runner|e2e)\b/i,
+  ],
+  gotchas: [
+    /\b(gotchas?|pitfalls?|known issues?|caveats?|watch out|heads? up)\b/i,
+    /\b(warning|caution|note:|important:|beware)\b/i,
+  ],
+  env_setup: [
+    /\b(env|environment|setup|install|prerequisites?|requirements?|getting started)\b/i,
+    /\b(\.env|api.?key|token|secret|env.?var|config|credentials?)\b/i,
+  ],
+  verification: [
+    /\b(verificati|verify|validation?|done criteria|checklist|self.?review|sign.?off)\b/i,
+    /\b(before.?commit|before.?push|before.?merge|ready.?to.?ship)\b/i,
   ],
 };
 
 // ─── Project Type Detection ──────────────────────────────────────────
 
 const PROJECT_TYPE_SIGNALS: Record<ProjectType, RegExp[]> = {
-  "code-focused": [
-    /\b(typescript|javascript|python|rust|go|java|c\+\+|react|vue|angular|svelte)\b/i,
-    /\b(api|endpoint|database|sql|graphql|rest|grpc)\b/i,
-    /\b(git|commit|branch|pull request|deploy|ci\/cd)\b/i,
-    /\b(function|class|interface|module|component|hook)\b/i,
+  "react-nextjs": [
+    /\b(react|next\.?js|nextjs|app router|jsx|tsx|pages?\/|app\/)\b/i,
+    /\b(component|hook|useState|useEffect|tailwind|shadcn)\b/i,
   ],
-  "content-creation": [
-    /\b(blog|article|newsletter|social media|linkedin|twitter|post)\b/i,
-    /\b(headline|copy|editorial|SEO|keyword|audience)\b/i,
-    /\b(brand voice|tone|messaging|storytelling)\b/i,
+  "python-backend": [
+    /\b(python|fastapi|flask|django|pydantic|uvicorn|gunicorn)\b/i,
+    /\b(pip|poetry|pytest|mypy|ruff|black|sqlalchemy)\b/i,
+  ],
+  fullstack: [
+    /\b(fullstack|full.?stack|frontend.?backend|backend.?frontend)\b/i,
+    /\b(monorepo|turbo|nx|api.?routes?|server.?components?)\b/i,
   ],
   "data-analysis": [
-    /\b(data|dataset|csv|sql|query|dashboard|chart|graph)\b/i,
-    /\b(metric|kpi|trend|anomaly|correlation|regression)\b/i,
-    /\b(pandas|numpy|matplotlib|tableau|looker|bigquery|snowflake)\b/i,
+    /\b(data.?analysis|analytics|dashboard|chart|graph|metric|kpi)\b/i,
+    /\b(pandas|numpy|matplotlib|tableau|looker|bigquery|snowflake|dbt)\b/i,
   ],
-  design: [
-    /\b(figma|sketch|design system|component library|UI|UX)\b/i,
-    /\b(wireframe|mockup|prototype|layout|spacing|typography)\b/i,
-    /\b(responsive|breakpoint|token|color palette)\b/i,
+  "content-creation": [
+    /\b(content|blog|article|newsletter|social.?media|linkedin|twitter|post)\b/i,
+    /\b(headline|copy|editorial|seo|brand.?voice|tone|audience)\b/i,
   ],
-  operations: [
-    /\b(runbook|deployment|monitoring|incident|alert|SLA|SLO)\b/i,
-    /\b(kubernetes|docker|terraform|aws|gcp|azure|infra)\b/i,
-    /\b(on-?call|escalation|rollback|canary)\b/i,
+  "design-system": [
+    /\b(design.?system|component.?library|storybook|figma|tokens?|theming)\b/i,
+    /\b(ui.?kit|wireframe|prototype|typography|color.?palette|spacing)\b/i,
   ],
-  mixed: [], // detected when 2+ types tie
+  "devops-infra": [
+    /\b(devops|infra|infrastructure|deployment|monitoring|kubernetes|k8s)\b/i,
+    /\b(terraform|docker|aws|gcp|azure|ci.?cd|pipeline|runbook)\b/i,
+  ],
+  mobile: [
+    /\b(mobile|ios|android|react.?native|expo|flutter|swift|kotlin)\b/i,
+    /\b(app.?store|play.?store|simulator|emulator|native|xcode)\b/i,
+  ],
+  "api-backend": [
+    /\b(api|rest|graphql|grpc|endpoint|swagger|openapi|microservice)\b/i,
+    /\b(express|fastify|hono|nestjs|prisma|drizzle|postgresql|redis)\b/i,
+  ],
+  generic: [], // fallback — detected when no other type scores above threshold
 };
 
 export function detectProjectType(content: string): {
@@ -114,16 +105,20 @@ export function detectProjectType(content: string): {
   secondary?: ProjectType;
 } {
   const scores: Record<ProjectType, number> = {
-    "code-focused": 0,
-    "content-creation": 0,
+    "react-nextjs": 0,
+    "python-backend": 0,
+    fullstack: 0,
     "data-analysis": 0,
-    design: 0,
-    operations: 0,
-    mixed: 0,
+    "content-creation": 0,
+    "design-system": 0,
+    "devops-infra": 0,
+    mobile: 0,
+    "api-backend": 0,
+    generic: 0,
   };
 
   for (const [type, patterns] of Object.entries(PROJECT_TYPE_SIGNALS)) {
-    if (type === "mixed") continue;
+    if (type === "generic") continue;
     for (const pattern of patterns) {
       const matches = content.match(new RegExp(pattern, "gi"));
       if (matches) {
@@ -133,21 +128,21 @@ export function detectProjectType(content: string): {
   }
 
   const sorted = Object.entries(scores)
-    .filter(([k]) => k !== "mixed")
+    .filter(([k]) => k !== "generic")
     .sort((a, b) => b[1] - a[1]);
 
   const [first, second] = sorted;
 
-  // If top two are close (within 30% of each other), classify as mixed
+  // If top two are close (within 30% of each other), return both
   if (first[1] > 0 && second[1] > 0 && second[1] / first[1] > 0.7) {
     return {
-      primary: "mixed",
+      primary: first[0] as ProjectType,
       secondary: second[0] as ProjectType,
     };
   }
 
   return {
-    primary: first[1] > 0 ? (first[0] as ProjectType) : "code-focused",
+    primary: first[1] > 0 ? (first[0] as ProjectType) : "generic",
     secondary: second[1] > 0 ? (second[0] as ProjectType) : undefined,
   };
 }
@@ -241,8 +236,7 @@ export function parseDocument(raw: string): ClaudeMdDocument {
 }
 
 function classifySection(title: string, content: string): SectionType {
-  const combined = `${title} ${content}`;
-  let bestMatch: SectionType = "context";
+  let bestMatch: SectionType = "architecture";
   let bestScore = 0;
 
   for (const [type, patterns] of Object.entries(SECTION_PATTERNS)) {
@@ -250,7 +244,7 @@ function classifySection(title: string, content: string): SectionType {
     for (const p of patterns) {
       // Title matches are worth 3x content matches
       if (p.test(title)) score += 3;
-      const contentMatches = combined.match(new RegExp(p, "gi"));
+      const contentMatches = content.match(new RegExp(p, "gi"));
       if (contentMatches) score += contentMatches.length;
     }
     if (score > bestScore) {
@@ -262,6 +256,21 @@ function classifySection(title: string, content: string): SectionType {
   return bestMatch;
 }
 
+// ─── Required Sections by Project Type ───────────────────────────────
+
+const REQUIRED_FOR_PROJECT_TYPE: Record<ProjectType, SectionType[]> = {
+  "react-nextjs":     ["commands", "code_style", "workflow", "architecture"],
+  "python-backend":   ["commands", "code_style", "workflow", "architecture"],
+  "fullstack":        ["commands", "code_style", "workflow", "architecture", "constraints"],
+  "data-analysis":    ["commands", "code_style", "workflow"],
+  "content-creation": ["constraints", "workflow"],
+  "design-system":    ["commands", "code_style", "architecture"],
+  "devops-infra":     ["commands", "workflow", "constraints"],
+  "mobile":           ["commands", "code_style", "workflow", "architecture"],
+  "api-backend":      ["commands", "code_style", "workflow", "architecture", "constraints"],
+  "generic":          ["commands", "workflow"],
+};
+
 // ─── Issue Detection Rules ───────────────────────────────────────────
 
 interface DetectionRule {
@@ -270,68 +279,6 @@ interface DetectionRule {
   title: string;
   test: (doc: ClaudeMdDocument) => AnalysisIssue[];
 }
-
-const VAGUE_QUALIFIERS = [
-  "as needed",
-  "if appropriate",
-  "when necessary",
-  "as applicable",
-  "where relevant",
-  "etc",
-  "and so on",
-  "things like that",
-  "stuff like",
-  "various",
-  "several",
-  "some kind of",
-  "basically",
-  "generally",
-  "usually",
-  "properly",
-  "correctly",
-  "good quality",
-  "high quality",
-  "best practices",
-];
-
-const HEDGE_WORDS = [
-  "maybe",
-  "perhaps",
-  "possibly",
-  "might want to",
-  "could consider",
-  "you may want",
-  "it would be nice",
-  "try to",
-  "attempt to",
-];
-
-const REQUIRED_FOR_PROJECT_TYPE: Record<ProjectType, SectionType[]> = {
-  "code-focused": [
-    "role", "context", "constraints", "code_conventions",
-    "output_format", "error_handling",
-  ],
-  "content-creation": [
-    "role", "context", "constraints", "brand_voice",
-    "output_format", "examples",
-  ],
-  "data-analysis": [
-    "role", "context", "constraints", "output_format",
-    "dependencies", "examples",
-  ],
-  design: [
-    "role", "context", "constraints", "accessibility",
-    "output_format",
-  ],
-  operations: [
-    "role", "context", "constraints", "workflow",
-    "error_handling", "dependencies",
-  ],
-  mixed: [
-    "role", "context", "constraints", "output_format",
-    "error_handling",
-  ],
-};
 
 const DETECTION_RULES: DetectionRule[] = [
   // ── Missing required sections ──
@@ -355,58 +302,77 @@ const DETECTION_RULES: DetectionRule[] = [
     },
   },
 
-  // ── Vague qualifiers ──
+  // ── Anti-pattern detection (from knowledge layer) ──
   {
-    id: "vague-qualifier",
-    severity: "warning",
-    title: "Vague qualifier detected",
-    test(doc) {
+    id: "anti-pattern",
+    severity: "warning" as IssueSeverity,
+    title: "Anti-pattern detected",
+    test(doc: ClaudeMdDocument): AnalysisIssue[] {
       const issues: AnalysisIssue[] = [];
-      for (const section of doc.sections) {
-        for (const qualifier of VAGUE_QUALIFIERS) {
-          const regex = new RegExp(`\\b${qualifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "gi");
-          const matches = section.content.matchAll(regex);
-          for (const match of matches) {
-            issues.push({
-              id: generateId(),
-              sectionId: section.id,
-              severity: "warning",
-              title: `Vague qualifier: "${qualifier}"`,
-              description: `The phrase "${qualifier}" leaves Claude to guess what you mean. Replace it with a specific instruction — what exactly should Claude do in this case?`,
-              matchedText: match[0],
-              ruleId: "vague-qualifier",
-            });
-          }
+      const fullContent = doc.sections.map((s) => `${s.title} ${s.content}`).join("\n");
+
+      for (const ap of ANTI_PATTERNS) {
+        if (ap.programmatic) continue; // handled by dedicated rules below
+        const regex = new RegExp(ap.pattern.source, "gi");
+        const matches = [...fullContent.matchAll(regex)];
+        for (const match of matches) {
+          const sectionId = doc.sections.find((s) => {
+            const sectionText = `${s.title} ${s.content}`;
+            return sectionText.includes(match[0]);
+          })?.id ?? null;
+
+          issues.push({
+            id: generateId(),
+            sectionId,
+            severity: ap.severity,
+            title: `Anti-pattern: ${ap.id.replace(/-/g, " ")}`,
+            description: ap.message,
+            matchedText: match[0],
+            ruleId: ap.id,
+          });
         }
       }
       return issues;
     },
   },
 
-  // ── Hedge words ──
+  // ── Over 200 lines (programmatic) ──
   {
-    id: "hedge-word",
-    severity: "suggestion",
-    title: "Hedge word weakens instruction",
-    test(doc) {
-      const issues: AnalysisIssue[] = [];
-      for (const section of doc.sections) {
-        for (const hedge of HEDGE_WORDS) {
-          const regex = new RegExp(`\\b${hedge.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "gi");
-          if (regex.test(section.content)) {
-            issues.push({
-              id: generateId(),
-              sectionId: section.id,
-              severity: "suggestion",
-              title: `Hedge word: "${hedge}"`,
-              description: `"${hedge}" softens the instruction. If you want Claude to do something, tell it directly. If it's conditional, state the condition explicitly.`,
-              matchedText: hedge,
-              ruleId: "hedge-word",
-            });
-          }
-        }
-      }
-      return issues;
+    id: "over-200-lines",
+    severity: "critical" as IssueSeverity,
+    title: "CLAUDE.md exceeds 200 lines",
+    test(doc: ClaudeMdDocument): AnalysisIssue[] {
+      const lineCount = doc.raw.split("\n").length;
+      if (lineCount <= 200) return [];
+      return [{
+        id: generateId(),
+        sectionId: null,
+        severity: "critical" as IssueSeverity,
+        title: `File is ${lineCount} lines (limit: 200)`,
+        description:
+          "Anthropic recommends under 200 lines. Longer files consume more context and reduce adherence. Move detailed content to .claude/rules/ files or use @imports.",
+        ruleId: "over-200-lines",
+      }];
+    },
+  },
+
+  // ── No verification criteria (programmatic) ──
+  {
+    id: "no-verification-criteria",
+    severity: "critical" as IssueSeverity,
+    title: "No verification criteria",
+    test(doc: ClaudeMdDocument): AnalysisIssue[] {
+      const hasRunnable = /`(?:pnpm|npm|yarn|pytest|cargo|go|make|npx)\s+\w[^`]*`/.test(doc.raw);
+      if (hasRunnable) return [];
+      return [{
+        id: generateId(),
+        sectionId: null,
+        severity: "critical" as IssueSeverity,
+        title: "No runnable verification commands found",
+        description:
+          "Per Anthropic: 'Give Claude a way to verify its work — this is the single highest-leverage thing you can do.' Add a Commands section with build/test/lint commands.",
+        ruleId: "no-verification-criteria",
+      }];
     },
   },
 
@@ -444,7 +410,7 @@ const DETECTION_RULES: DetectionRule[] = [
           const overlapWords = always.action.split(" ").filter((w) =>
             never.action.includes(w)
           );
-          if (overlapWords.length >= 2) {
+          if (overlapWords.length >= 1) {
             issues.push({
               id: generateId(),
               sectionId: always.sectionId,
@@ -502,30 +468,6 @@ const DETECTION_RULES: DetectionRule[] = [
       }
 
       return issues;
-    },
-  },
-
-  // ── No examples section ──
-  {
-    id: "no-examples",
-    severity: "warning",
-    title: "No examples provided",
-    test(doc) {
-      const hasExamples = doc.sections.some(
-        (s) => s.type === "examples" || /example|sample|e\.g\./i.test(s.content)
-      );
-      if (!hasExamples) {
-        return [{
-          id: generateId(),
-          sectionId: null,
-          severity: "warning",
-          title: "No examples found",
-          description:
-            "Few-shot examples are one of the most effective ways to guide Claude's behavior. Even 1–2 input/output pairs dramatically improve output consistency.",
-          ruleId: "no-examples",
-        }];
-      }
-      return [];
     },
   },
 
