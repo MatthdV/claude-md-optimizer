@@ -14,6 +14,11 @@ import type {
   ParsedSection,
 } from "../types";
 import { generateId } from "../utils/helpers";
+import { ANTI_PATTERNS } from "../knowledge/antipatterns";
+
+function getAntiPatternFix(ruleId: string): string | null {
+  return ANTI_PATTERNS.find((ap) => ap.id === ruleId)?.fix ?? null;
+}
 
 // ─── Suggestion Generators ───────────────────────────────────────────
 
@@ -29,41 +34,237 @@ type SuggestionGenerator = (
  * into a concrete, actionable suggestion.
  */
 const GENERATORS: Record<string, SuggestionGenerator> = {
-  "vague-qualifier": (issue, section) => {
+  // ── Vague qualifier anti-patterns ────────────────────────────────────
+  "vague-as-needed": (issue, section) => {
     if (!section || !issue.matchedText) return null;
-
-    const replacements: Record<string, string> = {
-      "as needed": "when [specific condition — describe when this applies]",
-      "if appropriate": "when [state the exact condition]",
-      "when necessary": "if [describe the trigger condition]",
-      "etc": "[list the remaining items explicitly, or remove]",
-      "and so on": "[list the remaining items, or add 'including X, Y, and Z']",
-      "best practices": "[name the specific practices: e.g., 'use parameterized queries, validate all inputs']",
-      "properly": "[describe the expected behavior: e.g., 'return a 400 status with a JSON error body']",
-      "correctly": "[specify what correct means: e.g., 'matching the TypeScript interface defined in types.ts']",
-      "good quality": "[define quality criteria: e.g., 'passes ESLint, has >80% branch coverage']",
-      "high quality": "[define quality criteria explicitly]",
-      "various": "[list them: e.g., 'PostgreSQL, Redis, and S3']",
-    };
-
-    const matched = issue.matchedText.toLowerCase();
-    const replacement = replacements[matched] || `[be specific about what "${matched}" means]`;
-
     return {
       id: generateId(),
-      category: "enhancement",
-      severity: "warning",
+      category: "enhancement" as const,
+      severity: "warning" as const,
       relatedIssueId: issue.id,
       sectionId: section.id,
-      title: `Replace "${issue.matchedText}" with specific instruction`,
+      title: `Replace "${issue.matchedText}" with specific condition`,
       description: issue.description,
       currentText: issue.matchedText,
-      suggestedText: replacement,
+      suggestedText: "when [specific condition — describe when this applies]",
       impact: 6,
       reasoning:
-        "Vague qualifiers force Claude to guess your intent. Specific instructions produce consistent, predictable output.",
+        getAntiPatternFix("vague-as-needed") ??
+        "Anthropic: 'Use 2-space indentation' not 'Format code properly.' Vague instructions produce inconsistent output.",
     };
   },
+
+  "vague-etc": (issue, section) => {
+    if (!section || !issue.matchedText) return null;
+    return {
+      id: generateId(),
+      category: "enhancement" as const,
+      severity: "warning" as const,
+      relatedIssueId: issue.id,
+      sectionId: section.id,
+      title: `Replace "${issue.matchedText}" with explicit list`,
+      description: issue.description,
+      currentText: issue.matchedText,
+      suggestedText: "[list all items explicitly, or write 'including X, Y, and Z']",
+      impact: 5,
+      reasoning:
+        getAntiPatternFix("vague-etc") ??
+        "Anthropic: 'Use 2-space indentation' not 'Format code properly.' Vague instructions produce inconsistent output.",
+    };
+  },
+
+  "vague-best-practices": (issue, section) => {
+    if (!section || !issue.matchedText) return null;
+    return {
+      id: generateId(),
+      category: "enhancement" as const,
+      severity: "warning" as const,
+      relatedIssueId: issue.id,
+      sectionId: section.id,
+      title: "Name specific practices instead of 'best practices'",
+      description: issue.description,
+      currentText: issue.matchedText,
+      suggestedText: "[name the specific practices: e.g., 'parameterized queries, input validation, error boundaries']",
+      impact: 6,
+      reasoning:
+        getAntiPatternFix("vague-best-practices") ??
+        "Anthropic: 'Use 2-space indentation' not 'Format code properly.' Vague instructions produce inconsistent output.",
+    };
+  },
+
+  "vague-properly": (issue, section) => {
+    if (!section || !issue.matchedText) return null;
+    return {
+      id: generateId(),
+      category: "enhancement" as const,
+      severity: "suggestion" as const,
+      relatedIssueId: issue.id,
+      sectionId: section.id,
+      title: `Define what "${issue.matchedText}" means`,
+      description: issue.description,
+      currentText: issue.matchedText,
+      suggestedText: "[describe the expected behavior: e.g., 'return a 400 JSON error body with code and message fields']",
+      impact: 5,
+      reasoning:
+        getAntiPatternFix("vague-properly") ??
+        "Anthropic: 'Use 2-space indentation' not 'Format code properly.' Vague instructions produce inconsistent output.",
+    };
+  },
+
+  // ── Self-evident anti-patterns ────────────────────────────────────────
+  "self-evident-clean-code": (issue, _section) => ({
+    id: generateId(),
+    category: "enhancement" as const,
+    severity: "critical" as const,
+    relatedIssueId: issue.id,
+    sectionId: null,
+    title: "Remove self-evident instruction",
+    description: issue.description,
+    currentText: issue.matchedText,
+    suggestedText: "← Remove this line entirely",
+    impact: 9,
+    reasoning:
+      getAntiPatternFix("self-evident-clean-code") ??
+      "Claude already writes clean code. This wastes context tokens per Anthropic's official guidance.",
+  }),
+
+  "self-evident-quality": (issue, _section) => ({
+    id: generateId(),
+    category: "enhancement" as const,
+    severity: "warning" as const,
+    relatedIssueId: issue.id,
+    sectionId: null,
+    title: "Replace quality claim with measurable criteria",
+    description: issue.description,
+    currentText: issue.matchedText,
+    suggestedText: "[define quality criteria: e.g., 'Passes ESLint strict, >80% test coverage, no any types']",
+    impact: 7,
+    reasoning:
+      getAntiPatternFix("self-evident-quality") ??
+      "'Quality' without definition is meaningless. Specify what quality means for your project.",
+  }),
+
+  // ── Over 200 lines ────────────────────────────────────────────────────
+  "over-200-lines": (_issue, _section) => ({
+    id: generateId(),
+    category: "gap" as const,
+    severity: "critical" as const,
+    relatedIssueId: _issue.id,
+    sectionId: null,
+    title: "Split CLAUDE.md into focused files",
+    description: _issue.description,
+    currentText: undefined,
+    suggestedText:
+      "Move detailed content to `.claude/rules/` files.\n" +
+      "Reference them in CLAUDE.md with: `@.claude/rules/testing.md`",
+    impact: 8,
+    reasoning:
+      getAntiPatternFix("over-200-lines") ??
+      "Anthropic: under 200 lines. Longer files reduce adherence.",
+  }),
+
+  // ── No verification criteria ──────────────────────────────────────────
+  "no-verification-criteria": (_issue, _section) => ({
+    id: generateId(),
+    category: "gap" as const,
+    severity: "critical" as const,
+    relatedIssueId: _issue.id,
+    sectionId: null,
+    title: "Add verification commands",
+    description: _issue.description,
+    currentText: undefined,
+    suggestedText:
+      "## Commands\n- Dev: `pnpm dev`\n- Build: `pnpm build`\n- Test: `pnpm test`\n- Lint: `pnpm lint`\n- Type check: `pnpm tsc --noEmit`",
+    impact: 10,
+    reasoning:
+      getAntiPatternFix("no-verification-criteria") ??
+      "Per Anthropic: 'Give Claude a way to verify its work — this is the single highest-leverage thing you can do.'",
+  }),
+
+  // ── Other anti-patterns ───────────────────────────────────────────────
+  "api-docs-inline": (issue, section) => ({
+    id: generateId(),
+    category: "enhancement" as const,
+    severity: "warning" as const,
+    relatedIssueId: issue.id,
+    sectionId: section?.id ?? null,
+    title: "Link to API docs instead of inlining",
+    description: issue.description,
+    currentText: issue.matchedText,
+    suggestedText: "API documentation: @docs/api.md",
+    impact: 6,
+    reasoning:
+      getAntiPatternFix("api-docs-inline") ??
+      "API documentation in CLAUDE.md bloats context. Link to docs instead.",
+  }),
+
+  "file-by-file": (issue, section) => ({
+    id: generateId(),
+    category: "enhancement" as const,
+    severity: "warning" as const,
+    relatedIssueId: issue.id,
+    sectionId: section?.id ?? null,
+    title: "Remove file-by-file description",
+    description: issue.description,
+    currentText: issue.matchedText,
+    suggestedText: "[Remove — Claude reads files directly. Describe patterns and conventions instead.]",
+    impact: 6,
+    reasoning:
+      getAntiPatternFix("file-by-file") ??
+      "File descriptions don't belong in CLAUDE.md. Claude can read the files.",
+  }),
+
+  "mandatory-action-not-hook": (issue, section) => ({
+    id: generateId(),
+    category: "enhancement" as const,
+    severity: "critical" as const,
+    relatedIssueId: issue.id,
+    sectionId: section?.id ?? null,
+    title: "Move mandatory action to a hook",
+    description: issue.description,
+    currentText: issue.matchedText,
+    suggestedText:
+      "Configure a hook in .claude/settings.json:\n" +
+      "Ask Claude: 'Write a hook that runs [action] after every file edit.'",
+    impact: 8,
+    reasoning:
+      getAntiPatternFix("mandatory-action-not-hook") ??
+      "CLAUDE.md instructions may be ignored. Hooks are guaranteed to run.",
+  }),
+
+  "path-agnostic-rule": (issue, section) => ({
+    id: generateId(),
+    category: "enhancement" as const,
+    severity: "warning" as const,
+    relatedIssueId: issue.id,
+    sectionId: section?.id ?? null,
+    title: "Scope rule to a .claude/rules/ file",
+    description: issue.description,
+    currentText: issue.matchedText,
+    suggestedText:
+      "Create .claude/rules/<topic>.md with frontmatter:\n---\npaths:\n  - \"src/api/**/*.ts\"\n---",
+    impact: 5,
+    reasoning:
+      getAntiPatternFix("path-agnostic-rule") ??
+      "Path-scoped rules should only load when relevant, not every session.",
+  }),
+
+  "subagent-worthy-instruction": (issue, section) => ({
+    id: generateId(),
+    category: "enhancement" as const,
+    severity: "suggestion" as const,
+    relatedIssueId: issue.id,
+    sectionId: section?.id ?? null,
+    title: "Delegate investigation to a subagent",
+    description: issue.description,
+    currentText: issue.matchedText,
+    suggestedText:
+      "Remove from CLAUDE.md. Use in prompts: 'Use a subagent to [investigate X]'\nor create .claude/agents/<name>.md.",
+    impact: 4,
+    reasoning:
+      getAntiPatternFix("subagent-worthy-instruction") ??
+      "Open-ended exploration fills main context with file reads. Subagents keep context clean.",
+  }),
 
   "hedge-word": (issue, section) => {
     if (!section || !issue.matchedText) return null;
@@ -94,6 +295,44 @@ const GENERATORS: Record<string, SuggestionGenerator> = {
       impact: 4,
       reasoning:
         "When you say 'try to do X', Claude treats it as a soft preference. When you say 'do X', it treats it as a requirement. If something is truly optional, say 'optionally, do X when [condition]'.",
+    };
+  },
+
+  "hedge-try-to": (issue, section) => {
+    if (!section || !issue.matchedText) return null;
+    return {
+      id: generateId(),
+      category: "enhancement" as const,
+      severity: "suggestion" as const,
+      relatedIssueId: issue.id,
+      sectionId: section.id,
+      title: `Strengthen: "${issue.matchedText}"`,
+      description: issue.description,
+      currentText: issue.matchedText,
+      suggestedText: "→ Use 'do' — Claude doesn't need permission to try",
+      impact: 4,
+      reasoning:
+        getAntiPatternFix("hedge-try-to") ??
+        "When you say 'try to do X', Claude treats it as a soft preference. Use 'do X' for a requirement.",
+    };
+  },
+
+  "hedge-maybe": (issue, section) => {
+    if (!section || !issue.matchedText) return null;
+    return {
+      id: generateId(),
+      category: "enhancement" as const,
+      severity: "suggestion" as const,
+      relatedIssueId: issue.id,
+      sectionId: section.id,
+      title: `Strengthen: "${issue.matchedText}"`,
+      description: issue.description,
+      currentText: issue.matchedText,
+      suggestedText: "→ State the condition: 'If X, then do Y' — or remove if truly optional",
+      impact: 4,
+      reasoning:
+        getAntiPatternFix("hedge-maybe") ??
+        "Hedge words make instructions feel optional. Be direct.",
     };
   },
 
