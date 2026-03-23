@@ -1,150 +1,88 @@
-# Claude.md Optimizer — Implementation Blueprint
+# CLAUDE.md Generator & Optimizer
 
-A client-side prompt optimization engine for React/Next.js that analyzes, scores, and improves `claude.md` files in real-time.
+Generate and optimize [`CLAUDE.md`](https://docs.anthropic.com/en/docs/claude-code/memory) files for your projects — the configuration file that gives Claude Code permanent memory about your codebase.
 
-## Project Structure
+**Live app → [claude-md-optimizer.vercel.app](https://claude-md-optimizer.vercel.app)**
 
-```
-claude-md-optimizer/
-├── SPECIFICATION.md          ← Architecture, data flow, scoring rubric
-├── EXAMPLES.md               ← 5 concrete weak → improved analyses
-├── README.md                 ← This file
-└── src/
-    ├── types/
-    │   └── index.ts          ← All TypeScript interfaces and type definitions
-    ├── utils/
-    │   └── helpers.ts        ← Hashing, debounce, ID generation, similarity
-    ├── engines/
-    │   ├── index.ts          ← Barrel export
-    │   ├── analysis-engine.ts    ← Parses markdown, detects project type, flags issues
-    │   ├── evaluation-engine.ts  ← 6-dimension scoring with weighted composite
-    │   ├── enhancement-engine.ts ← Generates before/after suggestions from issues
-    │   ├── recommendation-engine.ts ← Suggests missing sections with templates
-    │   └── orchestrator.ts       ← Coordinates engines, manages cache
-    ├── hooks/
-    │   └── useOptimizer.ts   ← React hook: debounced analysis, mode toggling
-    └── components/
-        ├── OptimizerSidebar.tsx    ← Main sidebar UI with tabs and suggestion cards
-        └── EditorIntegration.tsx   ← Example wiring into an editor page
-```
+---
 
-## How It Works
+## What it does
 
-### Pipeline
+**Generator** — Describe your project in one sentence ("React dashboard with Supabase and Tailwind"). The AI asks a few targeted questions, then produces a production-ready `CLAUDE.md` under 200 lines, following Anthropic's official best practices.
 
-1. **User edits** claude.md content in the main editor
-2. **Orchestrator** receives content (debounced 800ms in realtime mode, immediate on-demand)
-3. **Analysis Engine** parses into sections, detects project type, runs 7 detection rules
-4. **Evaluation Engine** scores across 6 dimensions (completeness, clarity, technical accuracy, scope alignment, structure, constraint quality)
-5. **Enhancement Engine** maps each issue to a concrete suggestion with before/after text
-6. **Recommendation Engine** suggests missing sections with starter templates
-7. **UI** renders everything in a sidebar: score dashboard → issues → suggestions → add sections
+**Optimizer** — Paste an existing `CLAUDE.md` and get:
+- A score across 5 dimensions (Actionability, Conciseness, Specificity, Completeness, Consistency)
+- Specific issues flagged (self-evident instructions, vague qualifiers, missing sections…)
+- One-click fixes with before/after diff
 
-### Scoring Dimensions
+Everything runs in your browser. No account required. Bring your own API key.
 
-| Dimension          | Weight | What it measures                              |
-|--------------------|--------|-----------------------------------------------|
-| Completeness       | 25%    | Required sections present for project type     |
-| Clarity            | 25%    | No vague qualifiers, hedges, or passive voice  |
-| Technical Accuracy | 20%    | Tools, conventions, versions are correct        |
-| Scope Alignment    | 15%    | Content stays focused on the project type       |
-| Structure          | 10%    | Logical ordering, no empty or bloated sections  |
-| Constraint Quality | 5%     | Boundaries are specific and non-contradictory   |
+---
 
-### Detection Rules
+## Supported LLM providers
 
-The analysis engine runs these checks:
-- **missing-section**: flags required sections that aren't present
-- **vague-qualifier**: catches "as needed", "best practices", "properly", etc.
-- **hedge-word**: catches "maybe", "try to", "could consider"
-- **contradiction**: detects "always X" conflicting with "never X"
-- **duplicate**: finds near-identical instructions across sections (Jaccard similarity > 0.7)
-- **no-examples**: warns when no input/output examples exist
-- **section-too-long**: flags sections over 80 lines
+| Provider | Models |
+|----------|--------|
+| OpenAI | GPT-4o, GPT-4.1, o3-mini… |
+| Anthropic | Claude Sonnet 4, Haiku 4.5, Opus 4 |
+| Google | Gemini 2.5 Flash, 2.5 Pro… |
+| Groq | Llama 3.3 70B, Mixtral 8x7B |
+| Custom | Any OpenAI-compatible endpoint (LiteLLM, Ollama…) |
 
-## Integration
+---
 
-### Minimal setup
+## Running locally
 
-```tsx
-import { EditorIntegration } from "./components/EditorIntegration";
-
-export default function Page() {
-  return <EditorIntegration initialContent={existingClaudeMd} />;
-}
+```bash
+git clone https://github.com/MatthdV/claude-md-optimizer.git
+cd claude-md-optimizer
+pnpm install
+pnpm dev
 ```
 
-### Custom integration
+Open [http://localhost:3000](http://localhost:3000).
 
-```tsx
-import { useOptimizer } from "./hooks/useOptimizer";
-import { OptimizerSidebar } from "./components/OptimizerSidebar";
+Configure your LLM provider via the **⚙ Settings** button — no environment variables needed.
 
-function MyEditor() {
-  const { state, analyzeNow, onContentChange, setMode } = useOptimizer();
+### Optional: server-side fallback
 
-  return (
-    <>
-      <YourEditorComponent onChange={(text) => onContentChange(text)} />
-      <OptimizerSidebar
-        result={state.result}
-        isAnalyzing={state.isAnalyzing}
-        mode={state.mode}
-        onModeChange={setMode}
-        onAnalyzeClick={() => analyzeNow(editorContent)}
-        onApplySuggestion={(s) => { /* apply diff to editor */ }}
-        onApplyRecommendation={(r) => { /* append template */ }}
-        onScrollToSection={(id) => { /* scroll editor */ }}
-      />
-    </>
-  );
-}
+If you want a default LLM key for all users (e.g. a demo deployment), create `.env.local`:
+
+```bash
+LLM_API_KEY=sk-...
+LLM_API_BASE_URL=https://api.openai.com/v1
+LLM_DEFAULT_MODEL=gpt-4o
 ```
 
-### Suggestion application contract
+The app falls back to these env vars when no client-side key is configured.
 
-When the user clicks "Apply" on a suggestion, the sidebar emits:
-- `currentText` (string | undefined): what to find in the document
-- `suggestedText` (string): what to replace it with, or what to append
+---
 
-Your editor is responsible for applying this patch and preserving undo history.
+## Deploy to Vercel
 
-## Design Decisions
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/MatthdV/claude-md-optimizer)
 
-**Why client-side?** The analysis is pattern matching and counting — no LLM call needed. Running it in the browser means zero latency, no API costs, and no data leaves the user's machine.
+No environment variables required. Users bring their own API key via the Settings panel.
 
-**Why not auto-apply suggestions?** This is an advisory system. Users know their project better than any heuristic. Every suggestion requires explicit confirmation.
+---
 
-**Why cache by content hash?** Users edit iteratively. If they undo a change or re-type the same content, we skip reprocessing. The cache holds up to 20 results and evicts oldest-first.
+## Stack
 
-**Why debounce at 800ms?** Shorter delays trigger too often during active typing, producing distracting UI updates. 800ms balances responsiveness with calm.
+- **Next.js 15** (App Router)
+- **TypeScript** strict mode
+- **Zustand** for state
+- **Tailwind CSS v4**
+- **Recharts** for score visualization
+- **OpenAI SDK** (used as OpenAI-compatible client for all providers)
 
-## Extending the System
+---
 
-### Add a new detection rule
+## API key privacy
 
-In `analysis-engine.ts`, add an entry to `DETECTION_RULES`:
+Your API key is stored in your browser's `localStorage` and sent to the Next.js server only to proxy the request to your LLM provider. It is **never logged or stored** server-side. See [SECURITY.md](./SECURITY.md) for details.
 
-```ts
-{
-  id: "my-new-rule",
-  severity: "warning",
-  title: "Description for the issues list",
-  test(doc) {
-    // Return AnalysisIssue[] — empty array if no issues found
-  },
-}
-```
+---
 
-Then add a matching generator in `enhancement-engine.ts` under `GENERATORS["my-new-rule"]`.
+## License
 
-### Add a new project type
-
-1. Add the type to `ProjectType` in `types/index.ts`
-2. Add signal patterns in `PROJECT_TYPE_SIGNALS` (analysis-engine.ts)
-3. Add required sections in `REQUIRED_FOR_PROJECT_TYPE` (analysis-engine.ts)
-4. Add recommendation templates in `RECOMMENDATION_TEMPLATES` (recommendation-engine.ts)
-
-### Swap the scoring weights
-
-Edit `DIMENSION_WEIGHTS` in `evaluation-engine.ts`. Weights must sum to 1.0.
+MIT — see [LICENSE](./LICENSE)
