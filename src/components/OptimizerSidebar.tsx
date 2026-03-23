@@ -8,6 +8,7 @@
  */
 
 import { useMemo } from "react";
+import { Sparkles } from "lucide-react";
 import { useOptimizerStore } from "../store/optimizer-store";
 import { t } from "../lib/i18n";
 import type {
@@ -355,6 +356,9 @@ function TabBar(): React.ReactElement {
 export function OptimizerSidebar(): React.ReactElement {
   const result = useOptimizerStore((s) => s.result);
   const isAnalyzing = useOptimizerStore((s) => s.isAnalyzing);
+  const isOptimizing = useOptimizerStore((s) => s.isOptimizing);
+  const optimizeWithLLM = useOptimizerStore((s) => s.optimizeWithLLM);
+  const apiKey = useOptimizerStore((s) => s.apiKey);
   const activeTab = useOptimizerStore((s) => s.activeTab);
   const filterSeverity = useOptimizerStore((s) => s.filterSeverity);
   const setFilterSeverity = useOptimizerStore((s) => s.setFilterSeverity);
@@ -404,7 +408,28 @@ export function OptimizerSidebar(): React.ReactElement {
           <TabBar />
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {activeTab === "score" && <ScoreDashboard />}
+            {activeTab === "score" && (
+              <>
+                <ScoreDashboard />
+                <button
+                  onClick={() => void optimizeWithLLM()}
+                  disabled={isOptimizing || !apiKey}
+                  className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold transition-all ${
+                    isOptimizing
+                      ? 'bg-indigo-100 text-indigo-400 cursor-wait'
+                      : apiKey
+                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 shadow-md hover:shadow-lg'
+                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  <Sparkles className={`w-4 h-4 ${isOptimizing ? 'animate-spin' : ''}`} />
+                  {isOptimizing
+                    ? t(language, 'optimizing')
+                    : t(language, 'optimizeButton')
+                  }
+                </button>
+              </>
+            )}
 
             {activeTab === "issues" && <IssuesList />}
 

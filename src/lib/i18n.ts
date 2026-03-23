@@ -45,6 +45,14 @@ export const translations = {
     saveSettings: 'Save & Close',
     noApiKey: 'Please configure your API key to use AI generation.',
 
+    // LLM Optimize
+    optimizeButton: 'Optimize with AI',
+    optimizing: 'Optimizing...',
+    tabGenerate: 'Generate new',
+    tabOptimize: 'Optimize existing',
+    pasteHere: 'Paste your existing CLAUDE.md here...',
+    optimizeSubtitle: 'Paste an existing CLAUDE.md. AI will analyze and rewrite it following Anthropic best practices.',
+
     // Errors / fallback
     llmUnavailable: 'LLM unavailable — using template mode',
     promptTooShort: 'Please describe your project in more detail',
@@ -89,6 +97,14 @@ export const translations = {
     configureLLM: 'Configurer le LLM →',
     saveSettings: 'Sauvegarder & Fermer',
     noApiKey: 'Configure ta clé API pour utiliser la génération IA.',
+
+    // LLM Optimize
+    optimizeButton: "Optimiser avec l'IA",
+    optimizing: 'Optimisation en cours...',
+    tabGenerate: 'Générer un nouveau',
+    tabOptimize: 'Optimiser un existant',
+    pasteHere: 'Colle ton CLAUDE.md existant ici...',
+    optimizeSubtitle: "Colle un CLAUDE.md existant. L'IA l'analysera et le réécrira selon les best practices Anthropic.",
 
     llmUnavailable: 'LLM indisponible — mode templates activé',
     promptTooShort: 'Décris ton projet plus en détail',

@@ -19,6 +19,9 @@ export function LazyPromptInput(): React.ReactElement {
   const lazyPrompt = useOptimizerStore((s) => s.lazyPrompt);
   const setLazyPrompt = useOptimizerStore((s) => s.setLazyPrompt);
   const fetchQuestions = useOptimizerStore((s) => s.fetchQuestions);
+  const startOptimizeExisting = useOptimizerStore((s) => s.startOptimizeExisting);
+  const inputMode = useOptimizerStore((s) => s.inputMode);
+  const setInputMode = useOptimizerStore((s) => s.setInputMode);
   const isLoadingQuestions = useOptimizerStore((s) => s.isLoadingQuestions);
   const error = useOptimizerStore((s) => s.error);
   const llmError = useOptimizerStore((s) => s.llmError);
@@ -32,14 +35,32 @@ export function LazyPromptInput(): React.ReactElement {
   const provider = getProvider(providerId);
   const modelDisplay = providerId === 'custom' ? customModelName : selectedModel;
 
+  const isOptimizeMode = inputMode === 'optimize';
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
+      handleNext();
+    }
+  };
+
+  const handleNext = (): void => {
+    if (isOptimizeMode) {
+      startOptimizeExisting();
+    } else {
       void fetchQuestions();
     }
   };
 
   const canGenerate = lazyPrompt.trim().length > 0 && !isLoadingQuestions;
+
+  const placeholder = isOptimizeMode
+    ? t(language, 'pasteHere')
+    : t(language, 'inputPlaceholder');
+
+  const subtitle = isOptimizeMode
+    ? t(language, 'optimizeSubtitle')
+    : t(language, 'heroSubtitle');
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4">
@@ -52,17 +73,41 @@ export function LazyPromptInput(): React.ReactElement {
           {t(language, 'heroTitle')}
         </h1>
         <p className="text-slate-500 text-lg max-w-lg">
-          {t(language, 'heroSubtitle')}
+          {subtitle}
         </p>
       </div>
 
       {/* Input card */}
       <div className="w-full max-w-2xl">
         <div className="rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* Mode tabs */}
+          <div className="flex border-b border-slate-100">
+            <button
+              onClick={() => setInputMode('generate')}
+              className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
+                !isOptimizeMode
+                  ? 'text-indigo-600 bg-white border-b-2 border-indigo-600'
+                  : 'text-slate-500 bg-slate-50 hover:text-slate-700'
+              }`}
+            >
+              {t(language, 'tabGenerate')}
+            </button>
+            <button
+              onClick={() => setInputMode('optimize')}
+              className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
+                isOptimizeMode
+                  ? 'text-indigo-600 bg-white border-b-2 border-indigo-600'
+                  : 'text-slate-500 bg-slate-50 hover:text-slate-700'
+              }`}
+            >
+              {t(language, 'tabOptimize')}
+            </button>
+          </div>
+
           <textarea
             className="w-full px-6 pt-5 pb-3 text-base text-slate-800 placeholder-slate-400 resize-none outline-none font-sans"
-            placeholder={t(language, 'inputPlaceholder')}
-            rows={3}
+            placeholder={placeholder}
+            rows={isOptimizeMode ? 8 : 3}
             value={lazyPrompt}
             onChange={(e) => setLazyPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -91,7 +136,7 @@ export function LazyPromptInput(): React.ReactElement {
             </div>
 
             <button
-              onClick={() => void fetchQuestions()}
+              onClick={handleNext}
               disabled={!canGenerate}
               className="px-5 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
             >
@@ -110,28 +155,30 @@ export function LazyPromptInput(): React.ReactElement {
           </div>
         </div>
 
-        {/* Errors */}
-        {(error || llmError) && (
+        {/* Errors (generate mode only) */}
+        {!isOptimizeMode && (error || llmError) && (
           <p className="mt-3 text-sm text-amber-600 px-1">{llmError ?? error}</p>
         )}
 
-        {/* Example prompts */}
-        <div className="mt-6">
-          <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">
-            {t(language, 'examplesTitle')}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {EXAMPLE_PROMPTS.map((ex) => (
-              <button
-                key={ex}
-                onClick={() => setLazyPrompt(ex)}
-                className="px-3 py-1.5 rounded-full text-xs border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50 transition-colors"
-              >
-                {ex}
-              </button>
-            ))}
+        {/* Example prompts (generate mode only) */}
+        {!isOptimizeMode && (
+          <div className="mt-6">
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">
+              {t(language, 'examplesTitle')}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {EXAMPLE_PROMPTS.map((ex) => (
+                <button
+                  key={ex}
+                  onClick={() => setLazyPrompt(ex)}
+                  className="px-3 py-1.5 rounded-full text-xs border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50 transition-colors"
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Footer note */}

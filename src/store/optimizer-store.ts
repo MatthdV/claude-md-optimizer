@@ -26,6 +26,10 @@ interface OptimizerStore {
   // Phase
   phase: "input" | "questions" | "editor";
 
+  // Input mode (Phase 1 tab)
+  inputMode: 'generate' | 'optimize';
+  setInputMode: (mode: 'generate' | 'optimize') => void;
+
   // Generator
   lazyPrompt: string;
   setLazyPrompt: (p: string) => void;
@@ -86,6 +90,11 @@ interface OptimizerStore {
   applySuggestion: (s: Suggestion) => void;
   applyRecommendation: (r: SectionRecommendation) => void;
   reset: () => void;
+
+  // LLM Optimize
+  isOptimizing: boolean;
+  optimizeWithLLM: () => Promise<void>;
+  startOptimizeExisting: () => void;
 }
 
 // ─── Store Implementation ─────────────────────────────────────────────
@@ -93,6 +102,10 @@ interface OptimizerStore {
 export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
   // ── Phase ──
   phase: "input",
+
+  // ── Input mode ──
+  inputMode: 'generate',
+  setInputMode: (mode) => set({ inputMode: mode }),
 
   // ── Generator ──
   lazyPrompt: "",
@@ -333,6 +346,7 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
   reset: () =>
     set({
       phase: "input",
+      inputMode: 'generate',
       lazyPrompt: "",
       content: "",
       result: null,
@@ -346,6 +360,74 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
       isLoadingQuestions: false,
       isGeneratingLLM: false,
       llmError: null,
+      isOptimizing: false,
       // language and LLM settings preserved — user preferences survive reset
     }),
+
+  // ── LLM Optimize ──
+  isOptimizing: false,
+
+  startOptimizeExisting: () => {
+    const { lazyPrompt } = get();
+    if (!lazyPrompt.trim()) return;
+
+    set({
+      content: lazyPrompt,
+      phase: 'editor',
+      result: null,
+      error: null,
+      sidebarOpen: false,
+    });
+
+    get().analyze();
+  },
+
+  optimizeWithLLM: async () => {
+    const state = get();
+
+    if (!state.apiKey) {
+      set({ settingsOpen: true });
+      return;
+    }
+
+    set({ isOptimizing: true });
+
+    try {
+      const provider = getProvider(state.providerId);
+      const baseURL = state.providerId === 'custom' ? state.customBaseURL : provider.baseURL;
+      const model = state.providerId === 'custom' ? state.customModelName : state.selectedModel;
+
+      const issues = state.result?.analysis.issues.map((i) => i.description) ?? [];
+      const recs = state.result?.recommendations.map((r) => r.description) ?? [];
+      const recommendations = [...issues, ...recs];
+
+      const res = await fetch('/api/optimize-claude-md', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: state.content,
+          recommendations,
+          language: state.language,
+          apiKey: state.apiKey,
+          baseURL,
+          model,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status}`);
+      }
+
+      const data = await res.json() as { content?: string; error?: string };
+
+      if (data.content) {
+        set({ content: data.content, isOptimizing: false });
+        get().analyze();
+      } else {
+        set({ isOptimizing: false });
+      }
+    } catch {
+      set({ isOptimizing: false });
+    }
+  },
 }));
