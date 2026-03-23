@@ -34,9 +34,16 @@ export const translations = {
     applyFix: 'Apply fix',
     bestPractices: 'Anthropic best practices',
 
-    // Model selector
+    // Model / settings
     modelLabel: 'Model',
     languageLabel: 'Language',
+    settingsTitle: 'LLM Settings',
+    providerLabel: 'Provider',
+    apiKeyLabel: 'API Key',
+    apiKeyHint: 'Your key stays in your browser and is only sent to your chosen provider.',
+    configureLLM: 'Configure LLM →',
+    saveSettings: 'Save & Close',
+    noApiKey: 'Please configure your API key to use AI generation.',
 
     // Errors / fallback
     llmUnavailable: 'LLM unavailable — using template mode',
@@ -75,6 +82,13 @@ export const translations = {
 
     modelLabel: 'Modèle',
     languageLabel: 'Langue',
+    settingsTitle: 'Configuration LLM',
+    providerLabel: 'Fournisseur',
+    apiKeyLabel: 'Clé API',
+    apiKeyHint: "Ta clé reste dans ton navigateur et n'est envoyée qu'au fournisseur choisi.",
+    configureLLM: 'Configurer le LLM →',
+    saveSettings: 'Sauvegarder & Fermer',
+    noApiKey: 'Configure ta clé API pour utiliser la génération IA.',
 
     llmUnavailable: 'LLM indisponible — mode templates activé',
     promptTooShort: 'Décris ton projet plus en détail',

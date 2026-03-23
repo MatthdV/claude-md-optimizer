@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createLLMClient, getDefaultModel } from '@/lib/llm';
+import { createLLMClient, createFallbackClient, getDefaultModel } from '@/lib/llm';
 
 const SYSTEM_PROMPT_EN = `You are an expert in CLAUDE.md, the configuration file for Anthropic's Claude Code.
 
@@ -45,39 +45,65 @@ interface Answer {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const body = await req.json() as { lazyPrompt?: string; answers?: Answer[]; model?: string; language?: string };
-  const { lazyPrompt, answers = [], model, language = 'en' } = body;
+  try {
+    const body = await req.json() as {
+      lazyPrompt?: string;
+      answers?: Answer[];
+      model?: string;
+      language?: string;
+      apiKey?: string;
+      baseURL?: string;
+    };
+    const { lazyPrompt, answers = [], model, language = 'en', apiKey, baseURL } = body;
 
-  if (!lazyPrompt) {
-    return NextResponse.json({ error: 'lazyPrompt requis' }, { status: 400 });
+    if (!lazyPrompt) {
+      return NextResponse.json({ error: 'lazyPrompt requis' }, { status: 400 });
+    }
+
+    let client;
+    if (apiKey && baseURL) {
+      client = createLLMClient(apiKey, baseURL);
+    } else {
+      client = createFallbackClient();
+    }
+
+    if (!client) {
+      return NextResponse.json(
+        { error: language === 'fr' ? 'Aucune clé API configurée' : 'No API key configured' },
+        { status: 401 }
+      );
+    }
+
+    const systemPrompt = language === 'fr' ? SYSTEM_PROMPT_FR : SYSTEM_PROMPT_EN;
+
+    const userContext = [
+      `Project: ${lazyPrompt}`,
+      '',
+      'Answers to clarification questions:',
+      ...answers.map((a) => `- ${a.questionId}: ${a.answer}`),
+    ].join('\n');
+
+    const response = await client.chat.completions.create({
+      model: model || getDefaultModel(),
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContext },
+      ],
+      temperature: 0.2,
+      max_tokens: 4000,
+    });
+
+    const content = response.choices[0]?.message?.content ?? '';
+    const tokens = response.usage?.total_tokens ?? 0;
+    const usedModel = model || getDefaultModel();
+
+    return NextResponse.json({
+      content,
+      metadata: { model: usedModel, tokens },
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    console.error('generate-claude-md error:', message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const client = createLLMClient();
-  const systemPrompt = language === 'fr' ? SYSTEM_PROMPT_FR : SYSTEM_PROMPT_EN;
-
-  const userContext = [
-    `Project: ${lazyPrompt}`,
-    '',
-    'Answers to clarification questions:',
-    ...answers.map((a) => `- ${a.questionId}: ${a.answer}`),
-  ].join('\n');
-
-  const response = await client.chat.completions.create({
-    model: model || getDefaultModel(),
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userContext },
-    ],
-    temperature: 0.2,
-    max_tokens: 4000,
-  });
-
-  const content = response.choices[0]?.message?.content ?? '';
-  const tokens = response.usage?.total_tokens ?? 0;
-  const usedModel = model || getDefaultModel();
-
-  return NextResponse.json({
-    content,
-    metadata: { model: usedModel, tokens },
-  });
 }
