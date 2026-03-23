@@ -210,6 +210,12 @@ function scoreSpecificity(doc: ClaudeMdDocument): DimensionScore {
     }
   }
 
+  const placeholders = fullContent.match(/\[[A-Z][A-Z_0-9]{2,}\]/g) ?? [];
+  if (placeholders.length > 0) {
+    penaltyPoints += placeholders.length * 12;
+    issues.push(`${placeholders.length} unfilled placeholder${placeholders.length > 1 ? "s" : ""} — replace with concrete values`);
+  }
+
   const score = Math.max(0, 100 - penaltyPoints);
 
   return {
@@ -217,7 +223,9 @@ function scoreSpecificity(doc: ClaudeMdDocument): DimensionScore {
     score,
     weight: DIMENSION_WEIGHTS.specificity,
     explanation:
-      score >= 90
+      placeholders.length > 0
+        ? `${placeholders.length} unfilled placeholder${placeholders.length > 1 ? "s" : ""} need concrete values`
+        : score >= 90
         ? "Instructions are concrete and direct."
         : score >= 60
         ? "Several vague qualifiers or hedge words — Claude will have to guess intent."
@@ -230,7 +238,7 @@ function scoreCompleteness(doc: ClaudeMdDocument): DimensionScore {
   const required = getRequiredSections(doc.detectedProjectType);
   const present = new Set(doc.sections.map((s) => s.type));
   const missing = required.filter((t) => !present.has(t));
-  const score =
+  let score =
     required.length === 0
       ? 100
       : Math.round(
@@ -238,12 +246,20 @@ function scoreCompleteness(doc: ClaudeMdDocument): DimensionScore {
         );
   const issues = missing.map((t) => `Missing "${t}" section`);
 
+  const placeholders = doc.raw.match(/\[[A-Z][A-Z_0-9]{2,}\]/g) ?? [];
+  if (placeholders.length > 0) {
+    score = Math.max(0, score - placeholders.length * 8);
+    issues.push(`${placeholders.length} placeholder${placeholders.length > 1 ? "s" : ""} still need filling`);
+  }
+
   return {
     dimension: "completeness",
     score,
     weight: DIMENSION_WEIGHTS.completeness,
     explanation:
-      score >= 90
+      placeholders.length > 0
+        ? `${placeholders.length} placeholder${placeholders.length > 1 ? "s" : ""} still need filling`
+        : score >= 90
         ? "All required sections present for this project type."
         : score >= 60
         ? `${missing.length} required section(s) missing: ${missing.join(", ")}.`

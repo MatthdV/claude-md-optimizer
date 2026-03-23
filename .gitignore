@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Claude Code instruction files (not for public repo)
+CLAUDE.md
+EVOLUTION-LLM.md
+LANGUAGE-SELECTOR.md
+SPECIFICATION.md
+EXAMPLES.md

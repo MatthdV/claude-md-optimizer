@@ -148,6 +148,29 @@ export interface OptimizerState {
   lastAnalyzedHash: string | null;
 }
 
+// ─── LLM Flow ────────────────────────────────────────────────────────
+
+export interface Question {
+  id: string;
+  question: string;
+  type: 'choice' | 'text';
+  options?: string[];
+  placeholder?: string;
+}
+
+export interface Answer {
+  questionId: string;
+  answer: string;
+}
+
+export interface LLMModel {
+  id: string;
+  name: string;
+  provider: string;
+  speed: string;
+  quality: string;
+}
+
 // ─── UI State ────────────────────────────────────────────────────────
 
 export type SidebarTab = "score" | "issues" | "suggestions" | "recommendations";

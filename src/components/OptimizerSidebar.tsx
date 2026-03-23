@@ -1,210 +1,206 @@
+"use client";
+
 /**
  * OptimizerSidebar
  *
- * Main UI component — a collapsible sidebar that shows scores,
- * issues, suggestions, and recommendations. Integrates with the
- * editor via callbacks.
+ * Shows scores, issues, suggestions, and recommendations.
+ * Reads from and writes to the Zustand store directly.
  */
 
-import React, { useState, useMemo } from "react";
+import { useMemo } from "react";
+import { useOptimizerStore } from "../store/optimizer-store";
+import { t } from "../lib/i18n";
 import type {
-  OptimizerResult,
-  OptimizerMode,
-  SidebarTab,
   IssueSeverity,
   Suggestion,
   SectionRecommendation,
   DimensionScore,
 } from "../types";
 
-// ─── Props ───────────────────────────────────────────────────────────
+// ─── SeverityBadge ───────────────────────────────────────────────────
 
-interface OptimizerSidebarProps {
-  result: OptimizerResult | null;
-  isAnalyzing: boolean;
-  mode: OptimizerMode;
-  onModeChange: (mode: OptimizerMode) => void;
-  onAnalyzeClick: () => void;
-  onApplySuggestion: (suggestion: Suggestion) => void;
-  onApplyRecommendation: (recommendation: SectionRecommendation) => void;
-  onScrollToSection: (sectionId: string) => void;
-}
-
-// ─── Subcomponents ───────────────────────────────────────────────────
-
-function ScoreDashboard({ result }: { result: OptimizerResult }) {
-  const { evaluation } = result;
-  const gradeColor = {
-    A: "#22c55e",
-    B: "#84cc16",
-    C: "#eab308",
-    D: "#f97316",
-    F: "#ef4444",
-  }[evaluation.grade];
-
-  return (
-    <div className="score-dashboard">
-      <div className="composite-score" style={{ borderColor: gradeColor }}>
-        <span className="grade" style={{ color: gradeColor }}>
-          {evaluation.grade}
-        </span>
-        <span className="score-number">{evaluation.compositeScore}/100</span>
-      </div>
-      <p className="summary">{evaluation.summary}</p>
-      <div className="dimension-bars">
-        {evaluation.dimensions.map((dim) => (
-          <DimensionBar key={dim.dimension} dimension={dim} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DimensionBar({ dimension }: { dimension: DimensionScore }) {
-  const barColor =
-    dimension.score >= 80
-      ? "#22c55e"
-      : dimension.score >= 60
-      ? "#eab308"
-      : "#ef4444";
-
-  const label = dimension.dimension
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-
-  return (
-    <div className="dimension-bar">
-      <div className="dimension-header">
-        <span className="dimension-label">{label}</span>
-        <span className="dimension-score">{dimension.score}</span>
-      </div>
-      <div className="bar-track">
-        <div
-          className="bar-fill"
-          style={{ width: `${dimension.score}%`, backgroundColor: barColor }}
-        />
-      </div>
-      <p className="dimension-explanation">{dimension.explanation}</p>
-      {dimension.issues.length > 0 && (
-        <ul className="dimension-issues">
-          {dimension.issues.map((issue, i) => (
-            <li key={i}>{issue}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function SeverityBadge({ severity }: { severity: IssueSeverity }) {
+function SeverityBadge({ severity }: { severity: IssueSeverity }): React.ReactElement {
   const config = {
-    critical: { label: "Critical", color: "#ef4444", bg: "#fef2f2" },
-    warning: { label: "Warning", color: "#f59e0b", bg: "#fffbeb" },
-    suggestion: { label: "Tip", color: "#3b82f6", bg: "#eff6ff" },
+    critical: { label: "Critical", className: "bg-red-50 text-red-600 ring-red-200" },
+    warning:  { label: "Warning",  className: "bg-amber-50 text-amber-600 ring-amber-200" },
+    suggestion: { label: "Tip",   className: "bg-blue-50 text-blue-600 ring-blue-200" },
   }[severity];
 
   return (
-    <span
-      className="severity-badge"
-      style={{ color: config.color, backgroundColor: config.bg }}
-    >
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ring-1 ${config.className}`}>
       {config.label}
     </span>
   );
 }
 
+// ─── DimensionBar ─────────────────────────────────────────────────────
+
+function DimensionBar({ dimension }: { dimension: DimensionScore }): React.ReactElement {
+  const label = dimension.dimension
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const barColor =
+    dimension.score >= 80
+      ? "bg-emerald-500"
+      : dimension.score >= 60
+      ? "bg-amber-400"
+      : "bg-red-400";
+
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between items-center">
+        <span className="text-xs font-medium text-slate-700">{label}</span>
+        <span className="text-xs text-slate-500">{dimension.score}/100</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+        <div
+          className={`h-full rounded-full ${barColor} transition-all duration-500`}
+          style={{ width: `${dimension.score}%` }}
+        />
+      </div>
+      <p className="text-[11px] text-slate-500 leading-relaxed">{dimension.explanation}</p>
+    </div>
+  );
+}
+
+// ─── ScoreDashboard ──────────────────────────────────────────────────
+
+function ScoreDashboard(): React.ReactElement | null {
+  const result = useOptimizerStore((s) => s.result);
+  if (!result) return null;
+
+  const { evaluation } = result;
+  const gradeColor = {
+    A: "text-emerald-500",
+    B: "text-lime-500",
+    C: "text-amber-500",
+    D: "text-orange-500",
+    F: "text-red-500",
+  }[evaluation.grade];
+
+  const gradeBorder = {
+    A: "border-emerald-200",
+    B: "border-lime-200",
+    C: "border-amber-200",
+    D: "border-orange-200",
+    F: "border-red-200",
+  }[evaluation.grade];
+
+  return (
+    <div className="space-y-6">
+      {/* Grade + score */}
+      <div className={`flex items-center gap-4 p-4 rounded-xl border-2 ${gradeBorder} bg-white`}>
+        <span className={`text-6xl font-black leading-none ${gradeColor}`}>
+          {evaluation.grade}
+        </span>
+        <div>
+          <div className="text-2xl font-bold text-slate-800">
+            {evaluation.compositeScore}<span className="text-slate-400 text-base">/100</span>
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">{evaluation.summary}</p>
+        </div>
+      </div>
+
+      {/* Dimension bars */}
+      <div className="space-y-4">
+        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          Dimensions (Anthropic-aligned)
+        </h3>
+        {evaluation.dimensions.map((dim) => (
+          <DimensionBar key={dim.dimension} dimension={dim} />
+        ))}
+      </div>
+
+      {/* Detected metadata */}
+      <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+        <span className="text-[11px] text-slate-400">
+          Type: <strong className="text-slate-600">{result.analysis.document.detectedProjectType}</strong>
+        </span>
+        <span className="text-[11px] text-slate-400">
+          Lang: <strong className="text-slate-600">{result.analysis.document.language.toUpperCase()}</strong>
+        </span>
+        <span className="text-[11px] text-slate-400">
+          {result.processingTimeMs}ms
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── SuggestionCard ──────────────────────────────────────────────────
+
 function SuggestionCard({
   suggestion,
   onApply,
-  onNavigate,
 }: {
   suggestion: Suggestion;
   onApply: (s: Suggestion) => void;
-  onNavigate: (sectionId: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
+}): React.ReactElement {
+  const expandedCardId = useOptimizerStore((s) => s.expandedCardId);
+  const setExpandedCardId = useOptimizerStore((s) => s.setExpandedCardId);
+  const language = useOptimizerStore((s) => s.language);
+  const expanded = expandedCardId === suggestion.id;
+
+  const borderColor = {
+    critical: "border-l-red-400",
+    warning: "border-l-amber-400",
+    suggestion: "border-l-blue-400",
+  }[suggestion.severity];
 
   return (
-    <div className={`suggestion-card severity-${suggestion.severity}`}>
-      <div className="card-header" onClick={() => setExpanded(!expanded)}>
+    <div className={`rounded-lg border border-slate-200 border-l-4 ${borderColor} bg-white overflow-hidden`}>
+      <button
+        className="w-full flex items-start gap-2 p-3 text-left hover:bg-slate-50 transition-colors"
+        onClick={() => setExpandedCardId(expanded ? null : suggestion.id)}
+      >
         <SeverityBadge severity={suggestion.severity} />
-        <span className="card-title">{suggestion.title}</span>
-        <span className="impact-badge">Impact: {suggestion.impact}/10</span>
-        <span className="expand-icon">{expanded ? "▾" : "▸"}</span>
-      </div>
+        <span className="flex-1 text-xs font-medium text-slate-700 leading-relaxed">
+          {suggestion.title}
+        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[10px] text-slate-400">+{suggestion.impact}</span>
+          <span className="text-slate-300 text-sm">{expanded ? "▾" : "▸"}</span>
+        </div>
+      </button>
 
       {expanded && (
-        <div className="card-body">
-          <p className="card-description">{suggestion.description}</p>
+        <div className="px-3 pb-3 space-y-3">
+          <p className="text-xs text-slate-600 leading-relaxed">{suggestion.description}</p>
 
           {suggestion.currentText && (
-            <div className="diff-view">
-              <div className="diff-before">
-                <span className="diff-label">Current</span>
-                <code>{suggestion.currentText}</code>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Current</p>
+                <pre className="text-[11px] bg-red-50 text-red-800 rounded p-2 overflow-auto max-h-24 leading-relaxed">
+                  {suggestion.currentText}
+                </pre>
               </div>
-              <div className="diff-after">
-                <span className="diff-label">Suggested</span>
-                <code>{suggestion.suggestedText}</code>
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Suggested</p>
+                <pre className="text-[11px] bg-emerald-50 text-emerald-800 rounded p-2 overflow-auto max-h-24 leading-relaxed">
+                  {suggestion.suggestedText}
+                </pre>
               </div>
             </div>
           )}
 
           {!suggestion.currentText && suggestion.suggestedText && (
-            <div className="template-preview">
-              <span className="diff-label">Add this</span>
-              <pre>{suggestion.suggestedText}</pre>
+            <div>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Add this</p>
+              <pre className="text-[11px] bg-slate-50 text-slate-700 rounded p-2 overflow-auto max-h-32 leading-relaxed">
+                {suggestion.suggestedText}
+              </pre>
             </div>
           )}
 
-          <p className="reasoning">{suggestion.reasoning}</p>
+          <p className="text-[11px] text-slate-400 italic leading-relaxed">{suggestion.reasoning}</p>
 
-          <div className="card-actions">
-            <button
-              className="btn-apply"
-              onClick={() => onApply(suggestion)}
-            >
-              Apply
-            </button>
-            {suggestion.sectionId && (
-              <button
-                className="btn-navigate"
-                onClick={() => onNavigate(suggestion.sectionId!)}
-              >
-                Go to section
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function RecommendationCard({
-  recommendation,
-  onApply,
-}: {
-  recommendation: SectionRecommendation;
-  onApply: (r: SectionRecommendation) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <div className="recommendation-card">
-      <div className="card-header" onClick={() => setExpanded(!expanded)}>
-        <span className="card-title">{recommendation.title}</span>
-        <span className="impact-badge">Impact: {recommendation.impact}/10</span>
-        <span className="expand-icon">{expanded ? "▾" : "▸"}</span>
-      </div>
-
-      {expanded && (
-        <div className="card-body">
-          <p className="card-description">{recommendation.description}</p>
-          <pre className="template-preview">{recommendation.template}</pre>
-          <p className="reasoning">{recommendation.reasoning}</p>
-          <button className="btn-apply" onClick={() => onApply(recommendation)}>
-            Add section
+          <button
+            onClick={() => onApply(suggestion)}
+            className="px-3 py-1.5 rounded text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+          >
+            {t(language, 'applyFix')}
           </button>
         </div>
       )}
@@ -212,20 +208,159 @@ function RecommendationCard({
   );
 }
 
-// ─── Main Sidebar ────────────────────────────────────────────────────
+// ─── RecommendationCard ──────────────────────────────────────────────
 
-export function OptimizerSidebar({
-  result,
-  isAnalyzing,
-  mode,
-  onModeChange,
-  onAnalyzeClick,
-  onApplySuggestion,
-  onApplyRecommendation,
-  onScrollToSection,
-}: OptimizerSidebarProps) {
-  const [activeTab, setActiveTab] = useState<SidebarTab>("score");
-  const [filterSeverity, setFilterSeverity] = useState<IssueSeverity | "all">("all");
+function RecommendationCard({
+  recommendation,
+  onApply,
+}: {
+  recommendation: SectionRecommendation;
+  onApply: (r: SectionRecommendation) => void;
+}): React.ReactElement {
+  const expandedCardId = useOptimizerStore((s) => s.expandedCardId);
+  const setExpandedCardId = useOptimizerStore((s) => s.setExpandedCardId);
+  const language = useOptimizerStore((s) => s.language);
+  const id = `rec-${recommendation.sectionType}`;
+  const expanded = expandedCardId === id;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <button
+        className="w-full flex items-center gap-2 p-3 text-left hover:bg-slate-50 transition-colors"
+        onClick={() => setExpandedCardId(expanded ? null : id)}
+      >
+        <span className="flex-1 text-xs font-medium text-slate-700">
+          {recommendation.title}
+        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[10px] text-slate-400">+{recommendation.impact}</span>
+          <span className="text-slate-300 text-sm">{expanded ? "▾" : "▸"}</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-3 pb-3 space-y-3">
+          <p className="text-xs text-slate-600 leading-relaxed">{recommendation.description}</p>
+          <pre className="text-[11px] bg-slate-50 text-slate-700 rounded p-2 overflow-auto max-h-40 leading-relaxed">
+            {recommendation.template}
+          </pre>
+          <p className="text-[11px] text-slate-400 italic leading-relaxed">{recommendation.reasoning}</p>
+          <button
+            onClick={() => onApply(recommendation)}
+            className="px-3 py-1.5 rounded text-xs font-semibold bg-slate-800 text-white hover:bg-slate-900 transition-colors"
+          >
+            {t(language, 'addSection')}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Issues List ──────────────────────────────────────────────────────
+
+function IssuesList(): React.ReactElement | null {
+  const result = useOptimizerStore((s) => s.result);
+  if (!result) return null;
+
+  const { issues } = result.analysis;
+  const criticalCount = issues.filter((i) => i.severity === "critical").length;
+
+  if (issues.length === 0) {
+    return (
+      <p className="text-sm text-slate-500 text-center py-8">
+        No issues found — looks clean!
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {criticalCount > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 text-red-700 text-xs font-medium">
+          <span>⚠</span>
+          {criticalCount} critical issue{criticalCount > 1 ? "s" : ""} found
+        </div>
+      )}
+      {issues.map((issue) => (
+        <div
+          key={issue.id}
+          className="rounded-lg border border-slate-200 bg-white p-3 space-y-1"
+        >
+          <div className="flex items-center gap-2">
+            <SeverityBadge severity={issue.severity} />
+            <span className="text-xs font-semibold text-slate-700">{issue.title}</span>
+          </div>
+          <p className="text-[11px] text-slate-500 leading-relaxed">{issue.description}</p>
+          {issue.matchedText && (
+            <code className="block text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded mt-1 break-all">
+              {issue.matchedText}
+            </code>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Tab bar ─────────────────────────────────────────────────────────
+
+function TabBar(): React.ReactElement {
+  const activeTab = useOptimizerStore((s) => s.activeTab);
+  const setActiveTab = useOptimizerStore((s) => s.setActiveTab);
+  const result = useOptimizerStore((s) => s.result);
+
+  const issueCount = result?.analysis.issues.length ?? 0;
+  const suggCount = result?.suggestions.length ?? 0;
+  const recCount = result?.recommendations.length ?? 0;
+
+  const tabs = [
+    { id: "score" as const, label: "Score" },
+    { id: "issues" as const, label: "Issues", count: issueCount },
+    { id: "suggestions" as const, label: "Fixes", count: suggCount },
+    { id: "recommendations" as const, label: "Add", count: recCount },
+  ];
+
+  return (
+    <div className="flex border-b border-slate-200 bg-white">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => setActiveTab(tab.id)}
+          className={`flex-1 py-2.5 text-[11px] font-semibold transition-colors relative ${
+            activeTab === tab.id
+              ? "text-indigo-600"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          {tab.label}
+          {tab.count !== undefined && tab.count > 0 && (
+            <span className={`ml-1 px-1 rounded-full text-[9px] font-bold ${
+              activeTab === tab.id ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500"
+            }`}>
+              {tab.count}
+            </span>
+          )}
+          {activeTab === tab.id && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full" />
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── Main Sidebar ─────────────────────────────────────────────────────
+
+export function OptimizerSidebar(): React.ReactElement {
+  const result = useOptimizerStore((s) => s.result);
+  const isAnalyzing = useOptimizerStore((s) => s.isAnalyzing);
+  const activeTab = useOptimizerStore((s) => s.activeTab);
+  const filterSeverity = useOptimizerStore((s) => s.filterSeverity);
+  const setFilterSeverity = useOptimizerStore((s) => s.setFilterSeverity);
+  const applySuggestion = useOptimizerStore((s) => s.applySuggestion);
+  const applyRecommendation = useOptimizerStore((s) => s.applyRecommendation);
+  const language = useOptimizerStore((s) => s.language);
 
   const filteredSuggestions = useMemo(() => {
     if (!result) return [];
@@ -233,179 +368,102 @@ export function OptimizerSidebar({
     return result.suggestions.filter((s) => s.severity === filterSeverity);
   }, [result, filterSeverity]);
 
-  const issueCount = result?.analysis.issues.length ?? 0;
-  const criticalCount =
-    result?.analysis.issues.filter((i) => i.severity === "critical").length ?? 0;
-
   return (
-    <aside className="optimizer-sidebar">
-      {/* ── Header ── */}
-      <div className="sidebar-header">
-        <h2>Prompt Optimizer</h2>
-        <div className="mode-toggle">
-          <label>
-            <input
-              type="checkbox"
-              checked={mode === "realtime"}
-              onChange={(e) =>
-                onModeChange(e.target.checked ? "realtime" : "on-demand")
-              }
-            />
-            Real-time
-          </label>
-          {mode === "on-demand" && (
-            <button
-              className="btn-analyze"
-              onClick={onAnalyzeClick}
-              disabled={isAnalyzing}
-            >
-              {isAnalyzing ? "Analyzing..." : "Analyze"}
-            </button>
-          )}
-        </div>
+    <aside className="flex flex-col h-full bg-slate-50 border-l border-slate-200 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
+        <h2 className="text-sm font-bold text-slate-800">Optimizer</h2>
+        <span className="text-[10px] text-slate-400 font-medium">{t(language, 'bestPractices')}</span>
       </div>
 
-      {/* ── Loading state ── */}
+      {/* Loading */}
       {isAnalyzing && (
-        <div className="loading-bar">
-          <div className="loading-bar-fill" />
+        <div className="px-4 py-3 text-xs text-indigo-600 font-medium animate-pulse">
+          {t(language, 'analyzing')}
         </div>
       )}
 
-      {/* ── No results yet ── */}
+      {/* Empty state */}
       {!result && !isAnalyzing && (
-        <div className="empty-state">
-          <p>
-            {mode === "on-demand"
-              ? "Click 'Analyze' to evaluate your claude.md"
-              : "Start typing to see real-time suggestions"}
-          </p>
+        <div className="flex-1 flex items-center justify-center p-6 text-center">
+          <div>
+            <div className="text-3xl mb-3">📋</div>
+            <p className="text-sm text-slate-500">
+              Click <strong>{t(language, 'analyzeButton')}</strong> to evaluate your CLAUDE.md
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              Or enable {t(language, 'realtime').toLowerCase()} mode for live feedback
+            </p>
+          </div>
         </div>
       )}
 
-      {/* ── Results ── */}
+      {/* Results */}
       {result && (
         <>
-          {/* Tab bar */}
-          <nav className="tab-bar">
-            <button
-              className={activeTab === "score" ? "active" : ""}
-              onClick={() => setActiveTab("score")}
-            >
-              Score
-            </button>
-            <button
-              className={activeTab === "issues" ? "active" : ""}
-              onClick={() => setActiveTab("issues")}
-            >
-              Issues {issueCount > 0 && <span className="badge">{issueCount}</span>}
-            </button>
-            <button
-              className={activeTab === "suggestions" ? "active" : ""}
-              onClick={() => setActiveTab("suggestions")}
-            >
-              Suggestions
-            </button>
-            <button
-              className={activeTab === "recommendations" ? "active" : ""}
-              onClick={() => setActiveTab("recommendations")}
-            >
-              Add Sections
-            </button>
-          </nav>
+          <TabBar />
 
-          {/* Tab content */}
-          <div className="tab-content">
-            {activeTab === "score" && <ScoreDashboard result={result} />}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {activeTab === "score" && <ScoreDashboard />}
 
-            {activeTab === "issues" && (
-              <div className="issues-list">
-                {criticalCount > 0 && (
-                  <div className="critical-banner">
-                    {criticalCount} critical issue{criticalCount > 1 ? "s" : ""} found
-                  </div>
-                )}
-                {result.analysis.issues.map((issue) => (
-                  <div key={issue.id} className={`issue-item severity-${issue.severity}`}>
-                    <SeverityBadge severity={issue.severity} />
-                    <div>
-                      <strong>{issue.title}</strong>
-                      <p>{issue.description}</p>
-                    </div>
-                    {issue.sectionId && (
-                      <button
-                        className="btn-navigate"
-                        onClick={() => onScrollToSection(issue.sectionId!)}
-                      >
-                        →
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+            {activeTab === "issues" && <IssuesList />}
 
             {activeTab === "suggestions" && (
-              <div className="suggestions-list">
-                <div className="filter-bar">
-                  {(["all", "critical", "warning", "suggestion"] as const).map(
-                    (sev) => (
-                      <button
-                        key={sev}
-                        className={filterSeverity === sev ? "active" : ""}
-                        onClick={() => setFilterSeverity(sev)}
-                      >
-                        {sev === "all" ? "All" : sev.charAt(0).toUpperCase() + sev.slice(1)}
-                      </button>
-                    )
-                  )}
+              <div className="space-y-3">
+                <div className="flex gap-1.5">
+                  {(["all", "critical", "warning", "suggestion"] as const).map((sev) => (
+                    <button
+                      key={sev}
+                      onClick={() => setFilterSeverity(sev)}
+                      className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors ${
+                        filterSeverity === sev
+                          ? "bg-indigo-600 text-white"
+                          : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      {sev === "all" ? "All" : sev.charAt(0).toUpperCase() + sev.slice(1)}
+                    </button>
+                  ))}
                 </div>
-                {filteredSuggestions.map((suggestion) => (
-                  <SuggestionCard
-                    key={suggestion.id}
-                    suggestion={suggestion}
-                    onApply={onApplySuggestion}
-                    onNavigate={onScrollToSection}
-                  />
-                ))}
-                {filteredSuggestions.length === 0 && (
-                  <p className="empty-filter">No suggestions match this filter.</p>
+
+                {filteredSuggestions.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-6">
+                    No suggestions match this filter.
+                  </p>
+                ) : (
+                  filteredSuggestions.map((s) => (
+                    <SuggestionCard key={s.id} suggestion={s} onApply={applySuggestion} />
+                  ))
                 )}
               </div>
             )}
 
             {activeTab === "recommendations" && (
-              <div className="recommendations-list">
-                <p className="section-intro">
-                  Sections you might want to add for a{" "}
-                  <strong>{result.analysis.document.detectedProjectType}</strong>{" "}
-                  project:
-                </p>
-                {result.recommendations.map((rec) => (
-                  <RecommendationCard
-                    key={rec.sectionType}
-                    recommendation={rec}
-                    onApply={onApplyRecommendation}
-                  />
-                ))}
-                {result.recommendations.length === 0 && (
-                  <p className="empty-filter">
-                    All recommended sections are already present.
+              <div className="space-y-3">
+                {result.recommendations.length === 0 ? (
+                  <p className="text-xs text-slate-500 text-center py-6">
+                    All recommended sections are present.
                   </p>
+                ) : (
+                  <>
+                    <p className="text-xs text-slate-500">
+                      Sections to add for a{" "}
+                      <strong className="text-slate-700">
+                        {result.analysis.document.detectedProjectType}
+                      </strong>{" "}
+                      project:
+                    </p>
+                    {result.recommendations.map((rec) => (
+                      <RecommendationCard
+                        key={rec.sectionType}
+                        recommendation={rec}
+                        onApply={applyRecommendation}
+                      />
+                    ))}
+                  </>
                 )}
               </div>
             )}
-          </div>
-
-          {/* Footer with metadata */}
-          <div className="sidebar-footer">
-            <span>
-              Detected: <strong>{result.analysis.document.detectedProjectType}</strong>
-            </span>
-            <span>
-              Language: <strong>{result.analysis.document.language.toUpperCase()}</strong>
-            </span>
-            <span>Analyzed in {result.processingTimeMs}ms</span>
           </div>
         </>
       )}
