@@ -93,6 +93,7 @@ interface OptimizerStore {
 
   // LLM Optimize
   isOptimizing: boolean;
+  optimizeError: string | null;
   optimizeWithLLM: () => Promise<void>;
   startOptimizeExisting: () => void;
 }
@@ -361,11 +362,13 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
       isGeneratingLLM: false,
       llmError: null,
       isOptimizing: false,
+      optimizeError: null,
       // language and LLM settings preserved — user preferences survive reset
     }),
 
   // ── LLM Optimize ──
   isOptimizing: false,
+  optimizeError: null,
 
   startOptimizeExisting: () => {
     const { lazyPrompt } = get();
@@ -390,7 +393,7 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
       return;
     }
 
-    set({ isOptimizing: true });
+    set({ isOptimizing: true, optimizeError: null });
 
     try {
       const provider = getProvider(state.providerId);
@@ -401,11 +404,17 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
       const recs = state.result?.recommendations.map((r) => r.description) ?? [];
       const recommendations = [...issues, ...recs];
 
+      // Truncate very long files to avoid serverless timeouts
+      const lines = state.content.split('\n');
+      const contentToSend = lines.length > 300
+        ? lines.slice(0, 300).join('\n') + '\n\n<!-- Truncated: original had ' + lines.length + ' lines. Focus on rewriting what is above. -->'
+        : state.content;
+
       const res = await fetch('/api/optimize-claude-md', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: state.content,
+          content: contentToSend,
           recommendations,
           language: state.language,
           apiKey: state.apiKey,
@@ -415,7 +424,10 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
       });
 
       if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
+        const errorData = await res.json().catch(() => ({})) as { error?: string };
+        const errorMessage = errorData.error ?? `Erreur ${res.status}`;
+        set({ optimizeError: errorMessage, isOptimizing: false });
+        return;
       }
 
       const data = await res.json() as { content?: string; error?: string };
@@ -426,8 +438,13 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
       } else {
         set({ isOptimizing: false });
       }
-    } catch {
-      set({ isOptimizing: false });
+    } catch (error) {
+      set({
+        optimizeError: error instanceof Error
+          ? `Erreur réseau : ${error.message}`
+          : 'Erreur inattendue lors de l\'optimisation',
+        isOptimizing: false,
+      });
     }
   },
 }));

@@ -357,8 +357,11 @@ export function OptimizerSidebar(): React.ReactElement {
   const result = useOptimizerStore((s) => s.result);
   const isAnalyzing = useOptimizerStore((s) => s.isAnalyzing);
   const isOptimizing = useOptimizerStore((s) => s.isOptimizing);
+  const optimizeError = useOptimizerStore((s) => s.optimizeError);
   const optimizeWithLLM = useOptimizerStore((s) => s.optimizeWithLLM);
   const apiKey = useOptimizerStore((s) => s.apiKey);
+  const content = useOptimizerStore((s) => s.content);
+  const lineCount = content.split('\n').length;
   const activeTab = useOptimizerStore((s) => s.activeTab);
   const filterSeverity = useOptimizerStore((s) => s.filterSeverity);
   const setFilterSeverity = useOptimizerStore((s) => s.setFilterSeverity);
@@ -411,6 +414,11 @@ export function OptimizerSidebar(): React.ReactElement {
             {activeTab === "score" && (
               <>
                 <ScoreDashboard />
+                {lineCount > 200 && (
+                  <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-xs">
+                    ⚠️ {lineCount} lignes — l&apos;optimisation peut prendre jusqu&apos;à 60 secondes
+                  </div>
+                )}
                 <button
                   onClick={() => void optimizeWithLLM()}
                   disabled={isOptimizing || !apiKey}
@@ -428,6 +436,11 @@ export function OptimizerSidebar(): React.ReactElement {
                     : t(language, 'optimizeButton')
                   }
                 </button>
+                {optimizeError && (
+                  <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs">
+                    {optimizeError}
+                  </div>
+                )}
               </>
             )}
 
