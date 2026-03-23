@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createLLMClient, getDefaultModel } from '@/lib/llm';
+import { createLLMClient, createFallbackClient, getDefaultModel } from '@/lib/llm';
 
 const SYSTEM_PROMPT_EN = `You are an expert in CLAUDE.md (the configuration file for Anthropic's Claude Code).
 
@@ -64,35 +64,63 @@ Format de sortie :
 }`;
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const body = await req.json() as { lazyPrompt?: string; model?: string; language?: string };
-  const { lazyPrompt, model, language = 'en' } = body;
-
-  if (!lazyPrompt || lazyPrompt.trim().length < 5) {
-    return NextResponse.json({ error: 'Prompt trop court' }, { status: 400 });
-  }
-
-  const client = createLLMClient();
-  const systemPrompt = language === 'fr' ? SYSTEM_PROMPT_FR : SYSTEM_PROMPT_EN;
-
-  const response = await client.chat.completions.create({
-    model: model || getDefaultModel(),
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Project: ${lazyPrompt}` },
-    ],
-    temperature: 0.3,
-    max_tokens: 1000,
-  });
-
-  const content = response.choices[0]?.message?.content ?? '';
-
   try {
-    const parsed = JSON.parse(content) as unknown;
-    return NextResponse.json(parsed);
-  } catch {
-    return NextResponse.json(
-      { error: 'LLM response parsing failed', raw: content },
-      { status: 500 }
-    );
+    const body = await req.json() as {
+      lazyPrompt?: string;
+      model?: string;
+      language?: string;
+      apiKey?: string;
+      baseURL?: string;
+    };
+    const { lazyPrompt, model, language = 'en', apiKey, baseURL } = body;
+
+    if (!lazyPrompt || lazyPrompt.trim().length < 5) {
+      return NextResponse.json(
+        { error: language === 'fr' ? 'Prompt trop court' : 'Prompt too short' },
+        { status: 400 }
+      );
+    }
+
+    let client;
+    if (apiKey && baseURL) {
+      client = createLLMClient(apiKey, baseURL);
+    } else {
+      client = createFallbackClient();
+    }
+
+    if (!client) {
+      return NextResponse.json(
+        { error: language === 'fr' ? 'Aucune clé API configurée' : 'No API key configured' },
+        { status: 401 }
+      );
+    }
+
+    const systemPrompt = language === 'fr' ? SYSTEM_PROMPT_FR : SYSTEM_PROMPT_EN;
+
+    const response = await client.chat.completions.create({
+      model: model || getDefaultModel(),
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Project: ${lazyPrompt}` },
+      ],
+      temperature: 0.3,
+      max_tokens: 1000,
+    });
+
+    const content = response.choices[0]?.message?.content ?? '';
+
+    try {
+      const parsed = JSON.parse(content) as unknown;
+      return NextResponse.json(parsed);
+    } catch {
+      return NextResponse.json(
+        { error: 'LLM response parsing failed', raw: content },
+        { status: 500 }
+      );
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    console.error('generate-questions error:', message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

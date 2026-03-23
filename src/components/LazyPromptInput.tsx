@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useOptimizerStore } from "../store/optimizer-store";
 import { LanguageSelector } from "./LanguageSelector";
+import { SettingsPanel } from "./SettingsPanel";
 import { t } from "../lib/i18n";
-import type { LLMModel } from "../types";
+import { getProvider } from "../lib/providers";
+import { Settings } from "lucide-react";
 
 const EXAMPLE_PROMPTS = [
   "React dashboard with Supabase and Tailwind",
@@ -18,26 +19,18 @@ export function LazyPromptInput(): React.ReactElement {
   const lazyPrompt = useOptimizerStore((s) => s.lazyPrompt);
   const setLazyPrompt = useOptimizerStore((s) => s.setLazyPrompt);
   const fetchQuestions = useOptimizerStore((s) => s.fetchQuestions);
-  const selectedModel = useOptimizerStore((s) => s.selectedModel);
-  const setSelectedModel = useOptimizerStore((s) => s.setSelectedModel);
   const isLoadingQuestions = useOptimizerStore((s) => s.isLoadingQuestions);
   const error = useOptimizerStore((s) => s.error);
   const llmError = useOptimizerStore((s) => s.llmError);
   const language = useOptimizerStore((s) => s.language);
+  const providerId = useOptimizerStore((s) => s.providerId);
+  const selectedModel = useOptimizerStore((s) => s.selectedModel);
+  const customModelName = useOptimizerStore((s) => s.customModelName);
+  const apiKey = useOptimizerStore((s) => s.apiKey);
+  const setSettingsOpen = useOptimizerStore((s) => s.setSettingsOpen);
 
-  const [models, setModels] = useState<LLMModel[]>([]);
-
-  useEffect(() => {
-    fetch('/api/models')
-      .then((r) => r.json())
-      .then((data: { models?: LLMModel[]; default?: string }) => {
-        if (data.models) setModels(data.models);
-        if (data.default) setSelectedModel(data.default);
-      })
-      .catch(() => {
-        // Models API unavailable — keep default
-      });
-  }, [setSelectedModel]);
+  const provider = getProvider(providerId);
+  const modelDisplay = providerId === 'custom' ? customModelName : selectedModel;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -50,6 +43,9 @@ export function LazyPromptInput(): React.ReactElement {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4">
+      {/* Settings modal */}
+      <SettingsPanel />
+
       {/* Header */}
       <div className="mb-10 text-center">
         <h1 className="text-4xl font-bold text-slate-900 mb-3 tracking-tight">
@@ -75,20 +71,20 @@ export function LazyPromptInput(): React.ReactElement {
 
           <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-t border-slate-100">
             <div className="flex items-center gap-3">
-              {/* Model selector */}
-              {models.length > 0 && (
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="text-xs text-slate-500 bg-transparent border border-slate-200 rounded-md px-2 py-1 outline-none hover:border-slate-300 focus:border-indigo-400 transition-colors cursor-pointer"
-                >
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+              {/* Settings button */}
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  apiKey
+                    ? 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+                }`}
+              >
+                <Settings className="w-3.5 h-3.5" />
+                {apiKey
+                  ? `${modelDisplay} via ${provider.name}`
+                  : t(language, 'configureLLM')}
+              </button>
 
               {/* Language selector */}
               <LanguageSelector />
@@ -140,7 +136,7 @@ export function LazyPromptInput(): React.ReactElement {
 
       {/* Footer note */}
       <p className="mt-12 text-xs text-slate-400 text-center">
-        Powered by LLM — API key configured server-side
+        {t(language, 'apiKeyHint')}
       </p>
     </div>
   );

@@ -15,6 +15,8 @@ import type {
   Answer,
 } from "../types";
 import type { Language } from "../lib/i18n";
+import type { ProviderId } from "../lib/providers";
+import { getProvider } from "../lib/providers";
 import { generate as generatorRun } from "../engines/generator-engine";
 import { run as orchestratorRun } from "../engines/orchestrator";
 
@@ -33,9 +35,22 @@ interface OptimizerStore {
   language: Language;
   setLanguage: (lang: Language) => void;
 
-  // LLM
+  // LLM Settings
+  providerId: ProviderId;
+  apiKey: string;
+  customBaseURL: string;
   selectedModel: string;
-  setSelectedModel: (model: string) => void;
+  customModelName: string;
+  settingsOpen: boolean;
+  setProviderId: (id: ProviderId) => void;
+  setApiKey: (key: string) => void;
+  setCustomBaseURL: (url: string) => void;
+  setSelectedModel: (m: string) => void;
+  setCustomModelName: (name: string) => void;
+  setSettingsOpen: (open: boolean) => void;
+  isConfigured: () => boolean;
+
+  // LLM flow
   questions: Question[];
   isLoadingQuestions: boolean;
   isGeneratingLLM: boolean;
@@ -93,17 +108,71 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
     set({ language: lang });
   },
 
-  // ── LLM ──
-  selectedModel: "claude-sonnet-4-20250514",
-  setSelectedModel: (model) => set({ selectedModel: model }),
+  // ── LLM Settings ──
+  providerId: 'openai',
+  apiKey: '',
+  customBaseURL: '',
+  selectedModel: 'gpt-4o',
+  customModelName: '',
+  settingsOpen: false,
+
+  setProviderId: (id) => {
+    const provider = getProvider(id);
+    set({
+      providerId: id,
+      selectedModel: provider.defaultModel,
+      customModelName: '',
+    });
+    if (typeof window !== 'undefined') localStorage.setItem('llm-provider', id);
+  },
+
+  setApiKey: (key) => {
+    set({ apiKey: key });
+    if (typeof window !== 'undefined') localStorage.setItem('llm-api-key', key);
+  },
+
+  setCustomBaseURL: (url) => {
+    set({ customBaseURL: url });
+    if (typeof window !== 'undefined') localStorage.setItem('llm-custom-url', url);
+  },
+
+  setSelectedModel: (m) => {
+    set({ selectedModel: m });
+    if (typeof window !== 'undefined') localStorage.setItem('llm-model', m);
+  },
+
+  setCustomModelName: (name) => {
+    set({ customModelName: name });
+    if (typeof window !== 'undefined') localStorage.setItem('llm-custom-model', name);
+  },
+
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
+
+  isConfigured: () => {
+    const state = get();
+    return state.apiKey.length > 0;
+  },
+
+  // ── LLM flow ──
   questions: [],
   isLoadingQuestions: false,
   isGeneratingLLM: false,
   llmError: null,
 
   fetchQuestions: async () => {
-    const { lazyPrompt, selectedModel, generateWithTemplates } = get();
+    const state = get();
+    const { lazyPrompt, generateWithTemplates } = state;
     if (!lazyPrompt.trim()) return;
+
+    // No API key → open settings
+    if (!state.apiKey) {
+      set({ settingsOpen: true });
+      return;
+    }
+
+    const provider = getProvider(state.providerId);
+    const baseURL = state.providerId === 'custom' ? state.customBaseURL : provider.baseURL;
+    const model = state.providerId === 'custom' ? state.customModelName : state.selectedModel;
 
     set({ isLoadingQuestions: true, llmError: null });
 
@@ -111,7 +180,13 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
       const res = await fetch('/api/generate-questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lazyPrompt, model: selectedModel, language: get().language }),
+        body: JSON.stringify({
+          lazyPrompt,
+          model,
+          language: state.language,
+          apiKey: state.apiKey,
+          baseURL,
+        }),
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -126,14 +201,18 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
         phase: "questions",
       });
     } catch {
-      // Fallback gracieux : passer directement aux templates
       set({ isLoadingQuestions: false, llmError: 'LLM unavailable — using template mode' });
       generateWithTemplates();
     }
   },
 
   generateWithLLM: async (answers) => {
-    const { lazyPrompt, selectedModel, generateWithTemplates } = get();
+    const state = get();
+    const { generateWithTemplates } = state;
+
+    const provider = getProvider(state.providerId);
+    const baseURL = state.providerId === 'custom' ? state.customBaseURL : provider.baseURL;
+    const model = state.providerId === 'custom' ? state.customModelName : state.selectedModel;
 
     set({ isGeneratingLLM: true, llmError: null });
 
@@ -141,7 +220,14 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
       const res = await fetch('/api/generate-claude-md', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lazyPrompt, answers, model: selectedModel, language: get().language }),
+        body: JSON.stringify({
+          lazyPrompt: state.lazyPrompt,
+          answers,
+          model,
+          language: state.language,
+          apiKey: state.apiKey,
+          baseURL,
+        }),
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -159,7 +245,6 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
         isGeneratingLLM: false,
       });
     } catch {
-      // Fallback gracieux sur templates
       set({ isGeneratingLLM: false, llmError: 'LLM generation failed — using template mode' });
       generateWithTemplates();
     }
@@ -261,6 +346,6 @@ export const useOptimizerStore = create<OptimizerStore>((set, get) => ({
       isLoadingQuestions: false,
       isGeneratingLLM: false,
       llmError: null,
-      // language preserved intentionally — user preference survives reset
+      // language and LLM settings preserved — user preferences survive reset
     }),
 }));

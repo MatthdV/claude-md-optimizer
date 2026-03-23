@@ -7,11 +7,17 @@ import { QuestionsPanel } from "../components/QuestionsPanel";
 import { Editor } from "../components/Editor";
 import { OptimizerSidebar } from "../components/OptimizerSidebar";
 import type { Language } from "../lib/i18n";
+import type { ProviderId } from "../lib/providers";
 
 export default function Home(): React.ReactElement {
   const phase = useOptimizerStore((s) => s.phase);
   const sidebarOpen = useOptimizerStore((s) => s.sidebarOpen);
   const setLanguage = useOptimizerStore((s) => s.setLanguage);
+  const setProviderId = useOptimizerStore((s) => s.setProviderId);
+  const setApiKey = useOptimizerStore((s) => s.setApiKey);
+  const setCustomBaseURL = useOptimizerStore((s) => s.setCustomBaseURL);
+  const setSelectedModel = useOptimizerStore((s) => s.setSelectedModel);
+  const setCustomModelName = useOptimizerStore((s) => s.setCustomModelName);
 
   const lazyPrompt = useOptimizerStore((s) => s.lazyPrompt);
   const questions = useOptimizerStore((s) => s.questions);
@@ -20,13 +26,26 @@ export default function Home(): React.ReactElement {
   const generateWithTemplates = useOptimizerStore((s) => s.generateWithTemplates);
   const isGeneratingLLM = useOptimizerStore((s) => s.isGeneratingLLM);
 
-  // Hydrate language preference from localStorage (SSR-safe)
+  // Hydrate preferences from localStorage (SSR-safe)
   useEffect(() => {
-    const saved = localStorage.getItem('claude-md-lang') as Language | null;
-    if (saved === 'en' || saved === 'fr') {
-      setLanguage(saved);
-    }
-  }, [setLanguage]);
+    const savedLang = localStorage.getItem('claude-md-lang') as Language | null;
+    if (savedLang === 'en' || savedLang === 'fr') setLanguage(savedLang);
+
+    const savedProvider = localStorage.getItem('llm-provider') as ProviderId | null;
+    if (savedProvider) setProviderId(savedProvider);
+
+    const savedKey = localStorage.getItem('llm-api-key');
+    if (savedKey) setApiKey(savedKey);
+
+    const savedUrl = localStorage.getItem('llm-custom-url');
+    if (savedUrl) setCustomBaseURL(savedUrl);
+
+    const savedModel = localStorage.getItem('llm-model');
+    if (savedModel) setSelectedModel(savedModel);
+
+    const savedCustomModel = localStorage.getItem('llm-custom-model');
+    if (savedCustomModel) setCustomModelName(savedCustomModel);
+  }, [setLanguage, setProviderId, setApiKey, setCustomBaseURL, setSelectedModel, setCustomModelName]);
 
   if (phase === "input") {
     return <LazyPromptInput />;
